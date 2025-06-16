@@ -24,11 +24,11 @@ if (process.env.DATABASE_URL) {
 } else {
   // Local development
   dbConfig = {
-    host: process.env.DATABASE_HOST || 'localhost',
+    host: process.env.DATABASE_HOST || 'sql12.freesqldatabase.com',
     port: process.env.DATABASE_PORT || 3306,
-    user: process.env.DATABASE_USER || 'root',
-    password: process.env.DATABASE_PASSWORD || '',
-    database: process.env.DATABASE_NAME || 'db_test',
+    user: process.env.DATABASE_USER || 'sql12785091',
+    password: process.env.DATABASE_PASSWORD || 'f616rtqLdU',
+    database: process.env.DATABASE_NAME || 'sql12785091',
     connectionLimit: 10
   };
 }
