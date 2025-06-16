@@ -8,27 +8,26 @@ if (process.env.DATABASE_URL) {
   const url = new URL(process.env.DATABASE_URL);
   
   dbConfig = {
-    host: url.hostname,
-    port: url.port || 3306,
-    user: url.username,
-    password: url.password,
-    database: url.pathname.substring(1), // Remove leading '/'
-    ssl: {
-      rejectUnauthorized: false
-    },
+    host: 'sql12.freesqldatabase.com',
+    user: 'sql12785091',
+    password: 'f616rtqLdU',
+    database: 'sql12785091',
+    port: 3306,
+    waitForConnections: true,
     connectionLimit: 10,
+    queueLimit: 0,
     acquireTimeout: 60000,
     timeout: 60000,
     reconnect: true
-  };
+};
 } else {
   // Local development
   dbConfig = {
-    host: process.env.DATABASE_HOST || 'sql12.freesqldatabase.com',
-    port: process.env.DATABASE_PORT || 3306,
-    user: process.env.DATABASE_USER || 'sql12785091',
-    password: process.env.DATABASE_PASSWORD || 'f616rtqLdU',
-    database: process.env.DATABASE_NAME || 'sql12785091',
+    host: process.env.DB_HOST || 'sql12.freesqldatabase.com',
+    user: process.env.DB_USER || 'sql12785091',
+    password: process.env.DB_PASSWORD || 'f616rtqLdU',
+    database: process.env.DB_NAME || 'sql12785091',
+    port: process.env.DB_PORT || 3306,
     connectionLimit: 10
   };
 }
