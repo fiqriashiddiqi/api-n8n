@@ -41,8 +41,8 @@ app.get('/', (req, res) => {
 // Health check
 app.get('/api/health', async (req, res) => {
   try {
-    const { testConnection } = require('./src/config/database');
-    const dbConnected = await testConnection();
+    const { testDirectConnection } = require('./src/config/database');
+    const dbConnected = await testDirectConnection();
     
     res.json({ 
       status: dbConnected ? 'OK' : 'WARNING', 
@@ -64,26 +64,54 @@ app.get('/api/health', async (req, res) => {
 // Database test endpoint
 app.get('/api/test-db', async (req, res) => {
   try {
-    const db = require('./src/config/database');
+    const { testDirectConnection } = require('./src/config/database');
     
-    // Test basic connection
-    const [rows] = await db.execute('SELECT 1 as test, NOW() as current_time, VERSION() as mysql_version');
+    console.log('🔄 Testing database connection via API endpoint...');
+    const connected = await testDirectConnection();
     
-    // Try to get table information
-    const [tables] = await db.execute('SHOW TABLES');
-    
-    res.json({
-      status: 'SUCCESS',
-      message: 'Database connection working perfectly',
-      test_result: rows[0],
-      tables_count: tables.length,
-      available_tables: tables.map(t => Object.values(t)[0]),
-      connection_info: {
-        host: 'sql12.freesqldatabase.com',
-        database: 'sql12785091',
-        user: 'sql12785091'
+    if (connected) {
+      // If direct connection works, try to get more info
+      try {
+        const mysql = require('mysql2/promise');
+        const connection = await mysql.createConnection({
+          host: '185.224.138.9', // Try IP first
+          user: 'sql12785091',
+          password: 'f616rtqLdU',
+          database: 'sql12785091',
+          port: 3306,
+          ssl: false
+        });
+        
+        const [rows] = await connection.execute('SELECT 1 as test, NOW() as current_time, VERSION() as mysql_version');
+        const [tables] = await connection.execute('SHOW TABLES');
+        
+        await connection.end();
+        
+        res.json({
+          status: 'SUCCESS',
+          message: 'Database connection working perfectly',
+          test_result: rows[0],
+          tables_count: tables.length,
+          available_tables: tables.map(t => Object.values(t)[0]),
+          connection_info: {
+            host: 'sql12.freesqldatabase.com (via IP)',
+            database: 'sql12785091',
+            user: 'sql12785091'
+          }
+        });
+      } catch (detailError) {
+        res.json({
+          status: 'PARTIAL_SUCCESS',
+          message: 'Basic connection works but detailed query failed',
+          error: detailError.message
+        });
       }
-    });
+    } else {
+      res.status(500).json({
+        status: 'ERROR',
+        message: 'All database connection methods failed'
+      });
+    }
   } catch (error) {
     res.status(500).json({
       status: 'ERROR',
@@ -150,9 +178,13 @@ app.listen(PORT, '0.0.0.0', async () => {
   // Test database connection after server starts
   setTimeout(async () => {
     try {
-      const { testConnection } = require('./src/config/database');
-      const dbConnected = await testConnection();
+      const { testDirectConnection } = require('./src/config/database');
+      const dbConnected = await testDirectConnection();
       console.log(`🗄️ Database: ${dbConnected ? 'Connected ✅' : 'Failed ❌'}`);
+      
+      if (!dbConnected) {
+        console.log('💡 Try accessing /api/test-db endpoint for detailed diagnosis');
+      }
     } catch (error) {
       console.log(`🗄️ Database: Failed ❌ - ${error.message}`);
     }
