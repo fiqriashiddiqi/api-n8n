@@ -1,8 +1,22 @@
 // src/routes/users.js
 const express = require('express');
-const { pool } = require('../config/database');
 const router = express.Router();
 const crypto = require('crypto');
+
+// Import database dengan fallback handling
+let pool;
+try {
+  const dbModule = require('../config/database');
+  pool = dbModule.pool || dbModule; // Support both export styles
+  console.log('✅ Database module imported successfully');
+} catch (error) {
+  console.error('❌ Failed to import database module:', error.message);
+  // Create a mock pool for testing
+  pool = {
+    execute: async () => { throw new Error('Database not available'); },
+    getConnection: async () => { throw new Error('Database not available'); }
+  };
+}
 
 // Function untuk generate random ID
 function generateRandomId() {
@@ -11,8 +25,13 @@ function generateRandomId() {
 
 // Function untuk check apakah ID sudah ada
 async function isIdExists(connection, id) {
-  const [existing] = await connection.execute('SELECT id FROM users WHERE id = ?', [id]);
-  return existing.length > 0;
+  try {
+    const [existing] = await connection.execute('SELECT id FROM users WHERE id = ?', [id]);
+    return existing.length > 0;
+  } catch (error) {
+    console.error('Error checking ID existence:', error.message);
+    return false;
+  }
 }
 
 // Middleware for error handling
@@ -20,32 +39,169 @@ const asyncHandler = (fn) => (req, res, next) => {
   Promise.resolve(fn(req, res, next)).catch(next);
 };
 
+// Database connection check middleware
+const checkDbConnection = async (req, res, next) => {
+  try {
+    // Quick connection test
+    await pool.execute('SELECT 1');
+    next();
+  } catch (error) {
+    console.error('Database connection check failed:', error.message);
+    return res.status(503).json({
+      error: 'Service temporarily unavailable',
+      message: 'Database connection failed',
+      suggestion: 'Please try again later'
+    });
+  }
+};
+
 // =============================================================================
 // DEBUG ENDPOINTS (for troubleshooting)
 // =============================================================================
 
-// Simple test route
+// Simple test route (no database required)
 router.get('/test', (req, res) => {
-  res.json({ message: 'API is working!' });
+  res.json({ 
+    message: 'API is working!',
+    timestamp: new Date().toISOString(),
+    routes_available: true
+  });
 });
 
 // Debug database connection
 router.get('/debug/db-test', asyncHandler(async (req, res) => {
   try {
-    const [result] = await pool.execute('SELECT COUNT(*) as count FROM users');
-    const [sampleUsers] = await pool.execute('SELECT id, username, email, first_name FROM users LIMIT 3');
+    // Test basic connection
+    await pool.execute('SELECT 1 as test');
+    
+    // Try to get table info
+    const [tables] = await pool.execute('SHOW TABLES');
+    
+    // If users table exists, get count
+    const userTableExists = tables.some(table => 
+      Object.values(table)[0].toLowerCase() === 'users'
+    );
+    
+    let userStats = null;
+    if (userTableExists) {
+      try {
+        const [result] = await pool.execute('SELECT COUNT(*) as count FROM users');
+        const [sampleUsers] = await pool.execute('SELECT id, username, email, first_name FROM users LIMIT 3');
+        userStats = {
+          total_users: result[0].count,
+          sample_users: sampleUsers
+        };
+      } catch (userError) {
+        userStats = { error: 'Failed to query users table: ' + userError.message };
+      }
+    }
     
     res.json({
       database_connected: true,
-      total_users: result[0].count,
-      sample_users: sampleUsers,
+      available_tables: tables.map(t => Object.values(t)[0]),
+      users_table_exists: userTableExists,
+      user_stats: userStats,
       message: "Database connection OK"
     });
   } catch (error) {
     res.status(500).json({
       database_connected: false,
       error: error.message,
-      error_code: error.code
+      error_code: error.code,
+      suggestion: 'Check database connection settings'
+    });
+  }
+}));
+
+// Create users table if not exists
+router.post('/debug/create-tables', asyncHandler(async (req, res) => {
+  try {
+    // Create users table
+    await pool.execute(`
+      CREATE TABLE IF NOT EXISTS users (
+        id BIGINT PRIMARY KEY,
+        username VARCHAR(50) UNIQUE NOT NULL,
+        email VARCHAR(100) UNIQUE NOT NULL,
+        first_name VARCHAR(50),
+        last_name VARCHAR(50),
+        phone VARCHAR(20),
+        date_of_birth DATE,
+        gender ENUM('male', 'female', 'other'),
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+      )
+    `);
+
+    // Create user_accounts table
+    await pool.execute(`
+      CREATE TABLE IF NOT EXISTS user_accounts (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        user_id BIGINT,
+        status ENUM('active', 'inactive', 'suspended') DEFAULT 'active',
+        role ENUM('user', 'admin', 'moderator') DEFAULT 'user',
+        subscription ENUM('free', 'premium', 'enterprise') DEFAULT 'free',
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+      )
+    `);
+
+    // Create user_addresses table
+    await pool.execute(`
+      CREATE TABLE IF NOT EXISTS user_addresses (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        user_id BIGINT,
+        street VARCHAR(255),
+        city VARCHAR(100),
+        province VARCHAR(100),
+        postal_code VARCHAR(20),
+        country VARCHAR(100) DEFAULT 'Indonesia',
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+      )
+    `);
+
+    // Create user_preferences table
+    await pool.execute(`
+      CREATE TABLE IF NOT EXISTS user_preferences (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        user_id BIGINT,
+        language VARCHAR(10) DEFAULT 'en',
+        timezone VARCHAR(50) DEFAULT 'Asia/Jakarta',
+        notify_email BOOLEAN DEFAULT TRUE,
+        notify_sms BOOLEAN DEFAULT FALSE,
+        notify_push BOOLEAN DEFAULT TRUE,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+      )
+    `);
+
+    // Create user_profiles table
+    await pool.execute(`
+      CREATE TABLE IF NOT EXISTS user_profiles (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        user_id BIGINT,
+        avatar VARCHAR(255),
+        bio TEXT,
+        website VARCHAR(255),
+        instagram VARCHAR(100),
+        linkedin VARCHAR(100),
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+      )
+    `);
+
+    res.json({
+      success: true,
+      message: 'All tables created successfully',
+      tables: ['users', 'user_accounts', 'user_addresses', 'user_preferences', 'user_profiles']
+    });
+
+  } catch (error) {
+    console.error('Create tables error:', error);
+    res.status(500).json({
+      error: 'Failed to create tables',
+      message: error.message,
+      suggestion: 'Check database permissions'
     });
   }
 }));
@@ -55,7 +211,7 @@ router.get('/debug/db-test', asyncHandler(async (req, res) => {
 // =============================================================================
 
 // GET /api/users/search - Search users by various criteria
-router.get('/users/search', asyncHandler(async (req, res) => {
+router.get('/users/search', checkDbConnection, asyncHandler(async (req, res) => {
   console.log('Search endpoint called with query:', req.query);
   
   const { q, status, role, subscription, city, province } = req.query;
@@ -149,7 +305,7 @@ router.get('/users/search', asyncHandler(async (req, res) => {
 }));
 
 // GET /api/users/search/email/:email - Search user by email
-router.get('/users/search/email/:email', asyncHandler(async (req, res) => {
+router.get('/users/search/email/:email', checkDbConnection, asyncHandler(async (req, res) => {
   const email = req.params.email;
   console.log('Email search for:', email);
   
@@ -189,7 +345,7 @@ router.get('/users/search/email/:email', asyncHandler(async (req, res) => {
 // =============================================================================
 
 // GET /api/stats/users - Get user statistics
-router.get('/stats/users', asyncHandler(async (req, res) => {
+router.get('/stats/users', checkDbConnection, asyncHandler(async (req, res) => {
   try {
     const [totalUsers] = await pool.execute('SELECT COUNT(*) as total FROM users');
     const [activeUsers] = await pool.execute('SELECT COUNT(*) as active FROM user_accounts WHERE status = "active"');
@@ -218,7 +374,7 @@ router.get('/stats/users', asyncHandler(async (req, res) => {
 // =============================================================================
 
 // POST /api/users/bulk - Create multiple users
-router.post('/users/bulk', asyncHandler(async (req, res) => {
+router.post('/users/bulk', checkDbConnection, asyncHandler(async (req, res) => {
   const { users } = req.body;
   
   if (!Array.isArray(users) || users.length === 0) {
@@ -277,7 +433,7 @@ router.post('/users/bulk', asyncHandler(async (req, res) => {
 }));
 
 // DELETE /api/users/bulk - Delete multiple users
-router.delete('/users/bulk', asyncHandler(async (req, res) => {
+router.delete('/users/bulk', checkDbConnection, asyncHandler(async (req, res) => {
   const { userIds } = req.body;
   
   if (!Array.isArray(userIds) || userIds.length === 0) {
@@ -301,7 +457,7 @@ router.delete('/users/bulk', asyncHandler(async (req, res) => {
 // =============================================================================
 
 // GET /api/users - Get all users with pagination
-router.get('/users', asyncHandler(async (req, res) => {
+router.get('/users', checkDbConnection, asyncHandler(async (req, res) => {
   const page = parseInt(req.query.page) || 1;
   const limit = parseInt(req.query.limit) || 10;
   const offset = (page - 1) * limit;
@@ -337,7 +493,7 @@ router.get('/users', asyncHandler(async (req, res) => {
 }));
 
 // POST /api/users - Create new user
-router.post('/users', asyncHandler(async (req, res) => {
+router.post('/users', checkDbConnection, asyncHandler(async (req, res) => {
   const {
     username, email, first_name, last_name, phone, date_of_birth, gender,
     account, address, preferences, profile
@@ -422,7 +578,7 @@ router.post('/users', asyncHandler(async (req, res) => {
 }));
 
 // GET /api/users/:id - Get user by ID (MUST be after search routes)
-router.get('/users/:id', asyncHandler(async (req, res) => {
+router.get('/users/:id', checkDbConnection, asyncHandler(async (req, res) => {
   const userId = req.params.id;
   
   try {
@@ -455,7 +611,7 @@ router.get('/users/:id', asyncHandler(async (req, res) => {
 }));
 
 // PATCH /api/users/:id - Partial update user
-router.patch('/users/:id', asyncHandler(async (req, res) => {
+router.patch('/users/:id', checkDbConnection, asyncHandler(async (req, res) => {
   const userId = req.params.id;
   const updates = req.body;
   
@@ -492,7 +648,7 @@ router.patch('/users/:id', asyncHandler(async (req, res) => {
 }));
 
 // DELETE /api/users/:id - Delete user
-router.delete('/users/:id', asyncHandler(async (req, res) => {
+router.delete('/users/:id', checkDbConnection, asyncHandler(async (req, res) => {
   const userId = req.params.id;
   
   const [result] = await pool.execute('DELETE FROM users WHERE id = ?', [userId]);
@@ -502,206 +658,6 @@ router.delete('/users/:id', asyncHandler(async (req, res) => {
   }
   
   res.json({ message: 'User deleted successfully' });
-}));
-
-// =============================================================================
-// RELATED DATA ENDPOINTS
-// =============================================================================
-
-// User Accounts
-router.get('/users/:id/account', asyncHandler(async (req, res) => {
-  const [account] = await pool.execute('SELECT * FROM user_accounts WHERE user_id = ?', [req.params.id]);
-  
-  if (account.length === 0) {
-    return res.status(404).json({ error: 'Account not found' });
-  }
-  
-  res.json(account[0]);
-}));
-
-router.post('/users/:id/account', asyncHandler(async (req, res) => {
-  const userId = req.params.id;
-  const { status, role, subscription } = req.body;
-  
-  await pool.execute(
-    'INSERT INTO user_accounts (user_id, status, role, subscription) VALUES (?, ?, ?, ?)',
-    [userId, status || 'active', role || 'user', subscription || 'free']
-  );
-  
-  res.status(201).json({ message: 'Account created successfully' });
-}));
-
-router.put('/users/:id/account', asyncHandler(async (req, res) => {
-  const userId = req.params.id;
-  const { status, role, subscription } = req.body;
-  
-  const [result] = await pool.execute(
-    'UPDATE user_accounts SET status = ?, role = ?, subscription = ? WHERE user_id = ?',
-    [status, role, subscription, userId]
-  );
-  
-  if (result.affectedRows === 0) {
-    return res.status(404).json({ error: 'Account not found' });
-  }
-  
-  res.json({ message: 'Account updated successfully' });
-}));
-
-router.delete('/users/:id/account', asyncHandler(async (req, res) => {
-  const [result] = await pool.execute('DELETE FROM user_accounts WHERE user_id = ?', [req.params.id]);
-  
-  if (result.affectedRows === 0) {
-    return res.status(404).json({ error: 'Account not found' });
-  }
-  
-  res.json({ message: 'Account deleted successfully' });
-}));
-
-// User Addresses
-router.get('/users/:id/address', asyncHandler(async (req, res) => {
-  const [address] = await pool.execute('SELECT * FROM user_addresses WHERE user_id = ?', [req.params.id]);
-  
-  if (address.length === 0) {
-    return res.status(404).json({ error: 'Address not found' });
-  }
-  
-  res.json(address[0]);
-}));
-
-router.post('/users/:id/address', asyncHandler(async (req, res) => {
-  const userId = req.params.id;
-  const { street, city, province, postal_code, country } = req.body;
-  
-  await pool.execute(
-    'INSERT INTO user_addresses (user_id, street, city, province, postal_code, country) VALUES (?, ?, ?, ?, ?, ?)',
-    [userId, street, city, province, postal_code, country]
-  );
-  
-  res.status(201).json({ message: 'Address created successfully' });
-}));
-
-router.put('/users/:id/address', asyncHandler(async (req, res) => {
-  const userId = req.params.id;
-  const { street, city, province, postal_code, country } = req.body;
-  
-  const [result] = await pool.execute(
-    'UPDATE user_addresses SET street = ?, city = ?, province = ?, postal_code = ?, country = ? WHERE user_id = ?',
-    [street, city, province, postal_code, country, userId]
-  );
-  
-  if (result.affectedRows === 0) {
-    return res.status(404).json({ error: 'Address not found' });
-  }
-  
-  res.json({ message: 'Address updated successfully' });
-}));
-
-router.delete('/users/:id/address', asyncHandler(async (req, res) => {
-  const [result] = await pool.execute('DELETE FROM user_addresses WHERE user_id = ?', [req.params.id]);
-  
-  if (result.affectedRows === 0) {
-    return res.status(404).json({ error: 'Address not found' });
-  }
-  
-  res.json({ message: 'Address deleted successfully' });
-}));
-
-// User Preferences
-router.get('/users/:id/preferences', asyncHandler(async (req, res) => {
-  const [preferences] = await pool.execute('SELECT * FROM user_preferences WHERE user_id = ?', [req.params.id]);
-  
-  if (preferences.length === 0) {
-    return res.status(404).json({ error: 'Preferences not found' });
-  }
-  
-  res.json(preferences[0]);
-}));
-
-router.post('/users/:id/preferences', asyncHandler(async (req, res) => {
-  const userId = req.params.id;
-  const { language, timezone, notify_email, notify_sms, notify_push } = req.body;
-  
-  await pool.execute(
-    'INSERT INTO user_preferences (user_id, language, timezone, notify_email, notify_sms, notify_push) VALUES (?, ?, ?, ?, ?, ?)',
-    [userId, language || 'en', timezone || 'Asia/Jakarta', notify_email || 1, notify_sms || 0, notify_push || 1]
-  );
-  
-  res.status(201).json({ message: 'Preferences created successfully' });
-}));
-
-router.put('/users/:id/preferences', asyncHandler(async (req, res) => {
-  const userId = req.params.id;
-  const { language, timezone, notify_email, notify_sms, notify_push } = req.body;
-  
-  const [result] = await pool.execute(
-    'UPDATE user_preferences SET language = ?, timezone = ?, notify_email = ?, notify_sms = ?, notify_push = ? WHERE user_id = ?',
-    [language, timezone, notify_email, notify_sms, notify_push, userId]
-  );
-  
-  if (result.affectedRows === 0) {
-    return res.status(404).json({ error: 'Preferences not found' });
-  }
-  
-  res.json({ message: 'Preferences updated successfully' });
-}));
-
-router.delete('/users/:id/preferences', asyncHandler(async (req, res) => {
-  const [result] = await pool.execute('DELETE FROM user_preferences WHERE user_id = ?', [req.params.id]);
-  
-  if (result.affectedRows === 0) {
-    return res.status(404).json({ error: 'Preferences not found' });
-  }
-  
-  res.json({ message: 'Preferences deleted successfully' });
-}));
-
-// User Profiles
-router.get('/users/:id/profile', asyncHandler(async (req, res) => {
-  const [profile] = await pool.execute('SELECT * FROM user_profiles WHERE user_id = ?', [req.params.id]);
-  
-  if (profile.length === 0) {
-    return res.status(404).json({ error: 'Profile not found' });
-  }
-  
-  res.json(profile[0]);
-}));
-
-router.post('/users/:id/profile', asyncHandler(async (req, res) => {
-  const userId = req.params.id;
-  const { avatar, bio, website, instagram, linkedin } = req.body;
-  
-  await pool.execute(
-    'INSERT INTO user_profiles (user_id, avatar, bio, website, instagram, linkedin) VALUES (?, ?, ?, ?, ?, ?)',
-    [userId, avatar, bio, website, instagram, linkedin]
-  );
-  
-  res.status(201).json({ message: 'Profile created successfully' });
-}));
-
-router.put('/users/:id/profile', asyncHandler(async (req, res) => {
-  const userId = req.params.id;
-  const { avatar, bio, website, instagram, linkedin } = req.body;
-  
-  const [result] = await pool.execute(
-    'UPDATE user_profiles SET avatar = ?, bio = ?, website = ?, instagram = ?, linkedin = ? WHERE user_id = ?',
-    [avatar, bio, website, instagram, linkedin, userId]
-  );
-  
-  if (result.affectedRows === 0) {
-    return res.status(404).json({ error: 'Profile not found' });
-  }
-  
-  res.json({ message: 'Profile updated successfully' });
-}));
-
-router.delete('/users/:id/profile', asyncHandler(async (req, res) => {
-  const [result] = await pool.execute('DELETE FROM user_profiles WHERE user_id = ?', [req.params.id]);
-  
-  if (result.affectedRows === 0) {
-    return res.status(404).json({ error: 'Profile not found' });
-  }
-  
-  res.json({ message: 'Profile deleted successfully' });
 }));
 
 // =============================================================================

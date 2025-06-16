@@ -15,8 +15,22 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
 // Routes
-const userRoutes = require('./src/routes/users');
-app.use('/api/users', userRoutes);
+try {
+  const userRoutes = require('./src/routes/users');
+  app.use('/api', userRoutes); // Note: routes dalam users.js sudah include /users prefix
+  console.log('✅ User routes loaded successfully');
+} catch (error) {
+  console.error('❌ Failed to load user routes:', error.message);
+  
+  // Fallback route jika users.js gagal load
+  app.get('/api/users', (req, res) => {
+    res.status(503).json({
+      error: 'User routes not available',
+      message: 'Routes failed to initialize',
+      suggestion: 'Check database connection'
+    });
+  });
+}
 
 // Root route
 app.get('/', (req, res) => {
@@ -29,11 +43,19 @@ app.get('/', (req, res) => {
       'GET /',
       'GET /api/health',
       'GET /api/test-db',
+      'GET /api/users/test',
+      'GET /api/debug/db-test',
+      'POST /api/debug/create-tables',
       'GET /api/users',
-      'GET /api/users/:id',
+      'GET /api/users/search',
+      'GET /api/users/search/email/:email',
+      'GET /api/stats/users',
       'POST /api/users',
-      'PUT /api/users/:id',
-      'DELETE /api/users/:id'
+      'GET /api/users/:id',
+      'PATCH /api/users/:id',
+      'DELETE /api/users/:id',
+      'POST /api/users/bulk',
+      'DELETE /api/users/bulk'
     ]
   });
 });
