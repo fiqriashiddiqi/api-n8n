@@ -2,22 +2,35 @@ const mysql = require('mysql2/promise');
 
 let dbConfig;
 
-// Check multiple possible environment variable names used by Railway
+// Railway MySQL environment variables dari screenshot
+const railwayMysqlConfig = {
+  host: process.env.MYSQL_HOST,
+  user: process.env.MYSQL_USER || process.env.MYSQLUSER,
+  password: process.env.MYSQL_ROOT_PASSWORD || process.env.MYSQL_PASSWORD,
+  database: process.env.MYSQL_DATABASE || process.env.MYSQLDATABASE,
+  port: parseInt(process.env.MYSQL_PORT || process.env.MYSQLPORT || '3306')
+};
+
+// Check multiple possible Railway environment variable patterns
 const databaseUrl = process.env.DATABASE_URL || 
                    process.env.MYSQL_URL || 
-                   process.env.MYSQL_PRIVATE_URL ||
-                   process.env.MYSQL_PUBLIC_URL;
+                   process.env.MYSQL_PUBLIC_URL ||
+                   process.env.MYSQL_PRIVATE_URL;
 
-console.log('🔍 Environment variables check:', {
+console.log('🔍 Railway MySQL Environment Check:', {
   DATABASE_URL: !!process.env.DATABASE_URL,
   MYSQL_URL: !!process.env.MYSQL_URL,
-  MYSQL_PRIVATE_URL: !!process.env.MYSQL_PRIVATE_URL,
+  MYSQL_HOST: !!process.env.MYSQL_HOST,
+  MYSQL_USER: !!process.env.MYSQL_USER,
+  MYSQL_ROOT_PASSWORD: !!process.env.MYSQL_ROOT_PASSWORD,
+  MYSQL_DATABASE: !!process.env.MYSQL_DATABASE,
+  MYSQL_PORT: !!process.env.MYSQL_PORT,
   MYSQL_PUBLIC_URL: !!process.env.MYSQL_PUBLIC_URL,
-  selected_url: databaseUrl ? 'Found' : 'None'
+  MYSQL_PRIVATE_URL: !!process.env.MYSQL_PRIVATE_URL
 });
 
 if (databaseUrl) {
-  // Railway MySQL - DATABASE_URL format: mysql://user:password@host:port/database
+  // Method 1: Use DATABASE_URL/MYSQL_URL format
   try {
     const url = new URL(databaseUrl);
     
@@ -27,23 +40,37 @@ if (databaseUrl) {
       password: url.password,
       database: url.pathname.slice(1), // Remove leading '/'
       port: parseInt(url.port) || 3306,
-      // Railway MySQL optimized settings
       waitForConnections: true,
       connectionLimit: 10,
       queueLimit: 0,
       connectTimeout: 20000,
-      ssl: false // Railway internal network
+      ssl: false
     };
     
-    console.log('🚂 Using Railway MySQL database');
+    console.log('🚂 Using Railway MySQL (URL format)');
   } catch (error) {
     console.error('❌ Invalid DATABASE_URL format:', error.message);
-    console.log('🔄 Falling back to local configuration...');
     dbConfig = getFallbackConfig();
   }
+} else if (railwayMysqlConfig.host && railwayMysqlConfig.user) {
+  // Method 2: Use individual Railway MySQL environment variables
+  dbConfig = {
+    host: railwayMysqlConfig.host,
+    user: railwayMysqlConfig.user,
+    password: railwayMysqlConfig.password,
+    database: railwayMysqlConfig.database,
+    port: railwayMysqlConfig.port,
+    waitForConnections: true,
+    connectionLimit: 10,
+    queueLimit: 0,
+    connectTimeout: 20000,
+    ssl: false
+  };
+  
+  console.log('🚂 Using Railway MySQL (individual vars)');
 } else {
-  // Local development fallback
-  console.log('⚠️ No Railway database URL found, using fallback config');
+  // Method 3: Fallback configuration
+  console.log('⚠️ No Railway MySQL variables found, using fallback');
   dbConfig = getFallbackConfig();
 }
 
@@ -57,6 +84,7 @@ function getFallbackConfig() {
     waitForConnections: true,
     connectionLimit: 5,
     queueLimit: 0,
+    connectTimeout: 20000,
     ssl: false
   };
 }
@@ -66,7 +94,8 @@ console.log('🗄️ Database config:', {
   port: dbConfig.port,
   user: dbConfig.user,
   database: dbConfig.database,
-  source: databaseUrl ? 'Railway MySQL' : 'Fallback Config'
+  source: databaseUrl ? 'Railway MySQL (URL)' : 
+          (railwayMysqlConfig.host ? 'Railway MySQL (Vars)' : 'Fallback Config')
 });
 
 let pool;

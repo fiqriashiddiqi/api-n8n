@@ -126,21 +126,51 @@ app.get('/api/test-db', async (req, res) => {
 
 // Debug environment variables
 app.get('/api/debug/env', (req, res) => {
+  const envVars = {
+    NODE_ENV: process.env.NODE_ENV,
+    RAILWAY_ENVIRONMENT: process.env.RAILWAY_ENVIRONMENT,
+    PORT: process.env.PORT,
+    
+    // Database URL variables
+    DATABASE_URL: process.env.DATABASE_URL ? 'SET' : 'NOT_SET',
+    MYSQL_URL: process.env.MYSQL_URL ? 'SET' : 'NOT_SET', 
+    MYSQL_PRIVATE_URL: process.env.MYSQL_PRIVATE_URL ? 'SET' : 'NOT_SET',
+    MYSQL_PUBLIC_URL: process.env.MYSQL_PUBLIC_URL ? 'SET' : 'NOT_SET',
+    
+    // Individual Railway MySQL variables (from screenshot)
+    MYSQL_HOST: process.env.MYSQL_HOST ? 'SET' : 'NOT_SET',
+    MYSQL_USER: process.env.MYSQL_USER ? 'SET' : 'NOT_SET',
+    MYSQLUSER: process.env.MYSQLUSER ? 'SET' : 'NOT_SET',
+    MYSQL_ROOT_PASSWORD: process.env.MYSQL_ROOT_PASSWORD ? 'SET' : 'NOT_SET',
+    MYSQL_PASSWORD: process.env.MYSQL_PASSWORD ? 'SET' : 'NOT_SET',
+    MYSQL_DATABASE: process.env.MYSQL_DATABASE ? 'SET' : 'NOT_SET',
+    MYSQLDATABASE: process.env.MYSQLDATABASE ? 'SET' : 'NOT_SET',
+    MYSQL_PORT: process.env.MYSQL_PORT ? 'SET' : 'NOT_SET',
+    MYSQLPORT: process.env.MYSQLPORT ? 'SET' : 'NOT_SET',
+    
+    // Show preview (first 30 chars only for security)
+    mysql_url_preview: process.env.MYSQL_URL ? 
+      process.env.MYSQL_URL.substring(0, 40) + '...' : 'Not set',
+    mysql_host_preview: process.env.MYSQL_HOST || 'Not set',
+    mysql_database_preview: process.env.MYSQL_DATABASE || process.env.MYSQLDATABASE || 'Not set',
+    mysql_user_preview: process.env.MYSQL_USER || process.env.MYSQLUSER || 'Not set',
+      
+    // Count total env vars
+    total_env_vars: Object.keys(process.env).length,
+    
+    // All Railway/MySQL specific vars
+    railway_mysql_vars: Object.keys(process.env)
+      .filter(key => key.includes('RAILWAY') || key.includes('MYSQL'))
+      .reduce((obj, key) => {
+        obj[key] = process.env[key] ? 'SET' : 'NOT_SET';
+        return obj;
+      }, {})
+  };
+  
   res.json({
-    environment: process.env.NODE_ENV || 'development',
-    railway_environment: process.env.RAILWAY_ENVIRONMENT,
-    database_variables: {
-      DATABASE_URL: !!process.env.DATABASE_URL,
-      MYSQL_URL: !!process.env.MYSQL_URL,
-      MYSQL_PRIVATE_URL: !!process.env.MYSQL_PRIVATE_URL,
-      MYSQL_PUBLIC_URL: !!process.env.MYSQL_PUBLIC_URL,
-      // Show first few characters for debugging (don't expose full URL)
-      database_url_preview: process.env.DATABASE_URL ? 
-        process.env.DATABASE_URL.substring(0, 20) + '...' : 'Not set',
-      mysql_url_preview: process.env.MYSQL_URL ? 
-        process.env.MYSQL_URL.substring(0, 20) + '...' : 'Not set'
-    },
-    timestamp: new Date().toISOString()
+    message: 'Railway MySQL Environment Variables Debug',
+    timestamp: new Date().toISOString(),
+    environment: envVars
   });
 });
 
