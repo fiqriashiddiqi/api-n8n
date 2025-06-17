@@ -1,21 +1,6 @@
+// src/config/database.js
 const mysql = require('mysql2/promise');
-
-let dbConfig;
-
-// Railway MySQL environment variables dari screenshot
-const railwayMysqlConfig = {
-  host: process.env.MYSQL_HOST,
-  user: process.env.MYSQL_USER || process.env.MYSQLUSER,
-  password: process.env.MYSQL_ROOT_PASSWORD || process.env.MYSQL_PASSWORD,
-  database: process.env.MYSQL_DATABASE || process.env.MYSQLDATABASE,
-  port: parseInt(process.env.MYSQL_PORT || process.env.MYSQLPORT || '3306')
-};
-
-// Check multiple possible Railway environment variable patterns
-const databaseUrl = process.env.DATABASE_URL || 
-                   process.env.MYSQL_URL || 
-                   process.env.MYSQL_PUBLIC_URL ||
-                   process.env.MYSQL_PRIVATE_URL;
+const url = require('url');
 
 console.log('🔍 Railway MySQL Environment Check:', {
   DATABASE_URL: !!process.env.DATABASE_URL,
@@ -30,7 +15,6 @@ console.log('🔍 Railway MySQL Environment Check:', {
   RAILWAY_PRIVATE_DOMAIN: !!process.env.RAILWAY_PRIVATE_DOMAIN
 });
 
-// Debug actual values (first 50 chars only)
 console.log('🔧 Debug actual values:', {
   DATABASE_URL_preview: process.env.DATABASE_URL ? 
     process.env.DATABASE_URL.substring(0, 50) + '...' : 'Not set',
@@ -40,69 +24,98 @@ console.log('🔧 Debug actual values:', {
   RAILWAY_PRIVATE_DOMAIN_preview: process.env.RAILWAY_PRIVATE_DOMAIN || 'Not set'
 });
 
-if (databaseUrl) {
-  // Method 1: Use DATABASE_URL/MYSQL_URL format
+let dbConfig;
+
+if (process.env.DATABASE_URL) {
+  console.log('🚂 Using Railway MySQL (URL format)');
   try {
-    const url = new URL(databaseUrl);
+    const parsedUrl = url.parse(process.env.DATABASE_URL);
     
     dbConfig = {
-      host: url.hostname,
-      user: url.username,
-      password: url.password,
-      database: url.pathname.slice(1), // Remove leading '/'
-      port: parseInt(url.port) || 3306,
-      waitForConnections: true,
-      connectionLimit: 10,
-      queueLimit: 0,
-      connectTimeout: 30000, // Only valid timeout option
-      ssl: false
+      host: parsedUrl.hostname,
+      port: parseInt(parsedUrl.port) || 3306,
+      user: parsedUrl.auth.split(':')[0],
+      password: parsedUrl.auth.split(':')[1],
+      database: parsedUrl.pathname.slice(1),
+      connectTimeout: 60000,
+      acquireTimeout: 60000,
+      timeout: 60000,
+      reconnect: true,
+      charset: 'utf8mb4',
+      ssl: {
+        rejectUnauthorized: false
+      }
     };
     
-    console.log('🚂 Using Railway MySQL (URL format)');
     console.log('🔗 Connection details:', {
-      host: url.hostname,
-      port: url.port,
-      database: url.pathname.slice(1),
-      user: url.username
+      host: dbConfig.host,
+      port: dbConfig.port,
+      database: dbConfig.database,
+      user: dbConfig.user
     });
+    
   } catch (error) {
-    console.error('❌ Invalid DATABASE_URL format:', error.message);
-    dbConfig = getFallbackConfig();
+    console.error('❌ Failed to parse DATABASE_URL:', error.message);
+    throw error;
   }
-} else if (railwayMysqlConfig.host && railwayMysqlConfig.user) {
-  // Method 2: Use individual Railway MySQL environment variables
+  
+} else if (process.env.MYSQL_URL) {
+  console.log('🚂 Using Railway MySQL (MYSQL_URL)');
+  try {
+    const parsedUrl = url.parse(process.env.MYSQL_URL);
+    
+    dbConfig = {
+      host: parsedUrl.hostname,
+      port: parseInt(parsedUrl.port) || 3306,
+      user: parsedUrl.auth.split(':')[0],
+      password: parsedUrl.auth.split(':')[1],
+      database: parsedUrl.pathname.slice(1),
+      connectTimeout: 60000,
+      acquireTimeout: 60000,
+      timeout: 60000,
+      reconnect: true,
+      charset: 'utf8mb4',
+      ssl: {
+        rejectUnauthorized: false
+      }
+    };
+    
+  } catch (error) {
+    console.error('❌ Failed to parse MYSQL_URL:', error.message);
+    throw error;
+  }
+  
+} else if (process.env.MYSQL_HOST) {
+  console.log('🚂 Using Railway MySQL (individual vars)');
   dbConfig = {
-    host: railwayMysqlConfig.host,
-    user: railwayMysqlConfig.user,
-    password: railwayMysqlConfig.password,
-    database: railwayMysqlConfig.database,
-    port: railwayMysqlConfig.port,
-    waitForConnections: true,
-    connectionLimit: 10,
-    queueLimit: 0,
-    connectTimeout: 30000,
-    ssl: false
+    host: process.env.MYSQL_HOST,
+    port: parseInt(process.env.MYSQL_PORT) || 3306,
+    user: process.env.MYSQL_USER || 'root',
+    password: process.env.MYSQL_ROOT_PASSWORD || process.env.MYSQL_PASSWORD,
+    database: process.env.MYSQL_DATABASE || 'railway',
+    connectTimeout: 60000,
+    acquireTimeout: 60000,
+    timeout: 60000,
+    reconnect: true,
+    charset: 'utf8mb4',
+    ssl: {
+      rejectUnauthorized: false
+    }
   };
   
-  console.log('🚂 Using Railway MySQL (individual vars)');
 } else {
-  // Method 3: Fallback configuration
-  console.log('⚠️ No Railway MySQL variables found, using fallback');
-  dbConfig = getFallbackConfig();
-}
-
-function getFallbackConfig() {
-  return {
-    host: process.env.DB_HOST || 'localhost',
-    user: process.env.DB_USER || 'root',
-    password: process.env.DB_PASSWORD || '',
-    database: process.env.DB_NAME || 'user_api',
-    port: parseInt(process.env.DB_PORT || '3306'),
-    waitForConnections: true,
-    connectionLimit: 5,
-    queueLimit: 0,
-    connectTimeout: 30000,
-    ssl: false
+  console.log('⚠️ No Railway MySQL detected, using fallback config');
+  dbConfig = {
+    host: 'localhost',
+    port: 3306,
+    user: 'root',
+    password: '',
+    database: 'test',
+    connectTimeout: 60000,
+    acquireTimeout: 60000,
+    timeout: 60000,
+    reconnect: true,
+    charset: 'utf8mb4'
   };
 }
 
@@ -111,136 +124,86 @@ console.log('🗄️ Database config:', {
   port: dbConfig.port,
   user: dbConfig.user,
   database: dbConfig.database,
-  source: databaseUrl ? 'Railway MySQL (URL)' : 
-          (railwayMysqlConfig.host ? 'Railway MySQL (Vars)' : 'Fallback Config')
+  source: process.env.DATABASE_URL ? 'Railway MySQL (URL)' : 
+          process.env.MYSQL_URL ? 'Railway MySQL (MYSQL_URL)' :
+          process.env.MYSQL_HOST ? 'Railway MySQL (individual vars)' : 'Fallback'
 });
 
 let pool;
-let isConnected = false;
 
-// Create database pool
 async function createPool() {
   try {
     console.log('🔄 Creating MySQL connection pool...');
     
-    pool = mysql.createPool(dbConfig);
-    
-    // Test connection immediately with simple query
+    pool = mysql.createPool({
+      ...dbConfig,
+      waitForConnections: true,
+      connectionLimit: 10,
+      queueLimit: 0,
+      multipleStatements: false,
+      namedPlaceholders: false
+    });
+
+    // Test connection without problematic SQL functions
+    console.log('🔍 Testing database connection...');
     const connection = await pool.getConnection();
     
-    // Use simple test query (fix SQL syntax)
-    await connection.execute('SELECT 1 as test, NOW() as current_time');
-    console.log('✅ Database connection test successful');
+    try {
+      // Simple test query that works on all MySQL versions
+      const [result] = await connection.execute('SELECT 1 as test, NOW() as time_now');
+      console.log('✅ Database connection test successful:', result[0]);
+      
+      // Test database info with safe queries
+      try {
+        const [dbResult] = await connection.execute('SELECT DATABASE() as current_db');
+        const [versionResult] = await connection.execute('SELECT VERSION() as version');
+        console.log('🗄️ Database info:', {
+          database: dbResult[0].current_db,
+          version: versionResult[0].version
+        });
+      } catch (infoError) {
+        console.log('⚠️ Could not get database info:', infoError.message);
+      }
+      
+    } finally {
+      connection.release();
+    }
     
-    // Test database info with proper MySQL syntax
-    const [dbInfo] = await connection.execute('SELECT DATABASE() as db_name, VERSION() as mysql_version');
-    console.log('📊 Database info:', dbInfo[0]);
-    
-    connection.release();
-    
-    isConnected = true;
-    console.log('✅ MySQL pool created successfully');
-    
+    console.log('🗄️ Database: Railway MySQL Connected ✅');
     return pool;
+    
   } catch (error) {
     console.error('❌ Database pool creation failed:', error.message);
-    console.error('Error details:', {
-      code: error.code,
-      errno: error.errno,
-      sqlState: error.sqlState
+    console.error('Error details:', { 
+      code: error.code, 
+      errno: error.errno, 
+      sqlState: error.sqlState 
     });
     
-    isConnected = false;
-    throw error;
-  }
-}
-
-// Test connection function
-async function testConnection() {
-  try {
-    if (!pool) {
-      console.log('🔄 Pool not initialized, creating...');
-      await createPool();
-    }
-    
-    if (!pool) {
-      throw new Error('Failed to create database pool');
-    }
-    
-    const connection = await pool.getConnection();
-    // Use proper MySQL syntax
-    const [result] = await connection.execute('SELECT 1 as test, NOW() as time_now');
-    connection.release();
-    
-    console.log('✅ Database connection test successful:', result[0]);
-    return true;
-  } catch (error) {
-    console.error('❌ Database connection test failed:', error.message);
-    isConnected = false;
-    return false;
-  }
-}
-
-// Get database info
-async function getDatabaseInfo() {
-  try {
-    if (!pool) {
-      await createPool();
-    }
-    
-    const connection = await pool.getConnection();
-    
-    // Use single line MySQL query to avoid parsing issues
-    const [dbInfo] = await connection.execute('SELECT DATABASE() as database_name, VERSION() as mysql_version, USER() as current_user, CONNECTION_ID() as connection_id');
-    
-    const [tables] = await connection.execute('SHOW TABLES');
-    
-    connection.release();
-    
+    // Create a mock pool for development
     return {
-      info: dbInfo[0],
-      tables: tables.map(t => Object.values(t)[0]),
-      tables_count: tables.length
+      execute: async () => { 
+        throw new Error('Database connection failed: ' + error.message); 
+      },
+      getConnection: async () => { 
+        throw new Error('Database connection failed: ' + error.message); 
+      }
     };
-  } catch (error) {
-    console.error('❌ Failed to get database info:', error.message);
-    return null;
   }
 }
 
-// Initialize pool on module load
-createPool().catch(err => {
-  console.error('❌ Failed to initialize database pool on startup:', err.message);
+// Initialize pool
+createPool().then(poolInstance => {
+  pool = poolInstance;
+}).catch(error => {
+  console.error('❌ Failed to initialize database pool on startup:', error.message);
 });
 
-// Graceful shutdown
-process.on('SIGTERM', async () => {
-  console.log('🔄 Closing database connections...');
-  if (pool) {
-    await pool.end();
-    console.log('✅ Database connections closed');
-  }
-});
-
-// Database exports with Railway MySQL compatibility
-const dbExports = {
-  execute: async (query, params) => {
-    if (!pool) {
-      await createPool();
-    }
-    return pool.execute(query, params);
+// Export pool
+module.exports = {
+  pool: pool || {
+    execute: async () => { throw new Error('Pool not initialized'); },
+    getConnection: async () => { throw new Error('Pool not initialized'); }
   },
-  getConnection: async () => {
-    if (!pool) {
-      await createPool();
-    }
-    return pool.getConnection();
-  }
+  createPool
 };
-
-// Export everything
-module.exports = dbExports;
-module.exports.pool = dbExports; // For compatibility with existing code
-module.exports.testConnection = testConnection;
-module.exports.getDatabaseInfo = getDatabaseInfo;
-module.exports.isConnected = () => isConnected;
