@@ -74,39 +74,63 @@ router.get('/debug/db-test', asyncHandler(async (req, res) => {
     // Test basic connection
     await pool.execute('SELECT 1 as test');
     
-    // Get database info
-    const [dbInfo] = await pool.execute(`
-      SELECT 
-        DATABASE() as database_name,
-        VERSION() as mysql_version,
-        USER() as current_user
-    `);
+    // Get database info with separate queries for better compatibility
+    let dbInfo = {};
+    try {
+      const [dbName] = await pool.execute('SELECT DATABASE() as database_name');
+      dbInfo.database_name = dbName[0].database_name;
+    } catch (e) {
+      dbInfo.database_name = 'unknown';
+    }
+    
+    try {
+      const [version] = await pool.execute('SELECT VERSION() as mysql_version');
+      dbInfo.mysql_version = version[0].mysql_version;
+    } catch (e) {
+      dbInfo.mysql_version = 'unknown';
+    }
+    
+    try {
+      const [user] = await pool.execute('SELECT USER() as current_user');
+      dbInfo.current_user = user[0].current_user;
+    } catch (e) {
+      dbInfo.current_user = 'unknown';
+    }
     
     // Try to get table info
-    const [tables] = await pool.execute('SHOW TABLES');
-    
-    // If users table exists, get count
-    const userTableExists = tables.some(table => 
-      Object.values(table)[0].toLowerCase() === 'users'
-    );
-    
+    let tables = [];
+    let userTableExists = false;
     let userStats = null;
-    if (userTableExists) {
-      try {
-        const [result] = await pool.execute('SELECT COUNT(*) as count FROM users');
-        const [sampleUsers] = await pool.execute('SELECT id, username, email, first_name FROM users LIMIT 3');
-        userStats = {
-          total_users: result[0].count,
-          sample_users: sampleUsers
-        };
-      } catch (userError) {
-        userStats = { error: 'Failed to query users table: ' + userError.message };
+    
+    try {
+      const [tablesResult] = await pool.execute('SHOW TABLES');
+      tables = tablesResult;
+      
+      // If users table exists, get count
+      userTableExists = tables.some(table => 
+        Object.values(table)[0].toLowerCase() === 'users'
+      );
+      
+      if (userTableExists) {
+        try {
+          const [result] = await pool.execute('SELECT COUNT(*) as count FROM users');
+          const [sampleUsers] = await pool.execute('SELECT id, username, email, first_name FROM users LIMIT 3');
+          userStats = {
+            total_users: result[0].count,
+            sample_users: sampleUsers
+          };
+        } catch (userError) {
+          userStats = { error: 'Failed to query users table: ' + userError.message };
+        }
       }
+    } catch (tablesError) {
+      console.error('Error getting tables:', tablesError.message);
+      userStats = { error: 'Failed to get tables: ' + tablesError.message };
     }
     
     res.json({
       database_connected: true,
-      database_info: dbInfo[0],
+      database_info: dbInfo,
       available_tables: tables.map(t => Object.values(t)[0]),
       users_table_exists: userTableExists,
       user_stats: userStats,
