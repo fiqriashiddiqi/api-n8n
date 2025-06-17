@@ -123,6 +123,342 @@ router.get('/debug/db-test', asyncHandler(async (req, res) => {
   }
 }));
 
+// Create tables endpoint
+router.post('/debug/create-tables', asyncHandler(async (req, res) => {
+  try {
+    // Create users table
+    await pool.execute(`
+      CREATE TABLE IF NOT EXISTS users (
+        id BIGINT PRIMARY KEY,
+        username VARCHAR(50) UNIQUE NOT NULL,
+        email VARCHAR(100) UNIQUE NOT NULL,
+        first_name VARCHAR(50),
+        last_name VARCHAR(50),
+        phone VARCHAR(20),
+        date_of_birth DATE,
+        gender ENUM('male', 'female', 'other'),
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        last_login TIMESTAMP NULL
+      )
+    `);
+
+    // Create user_accounts table
+    await pool.execute(`
+      CREATE TABLE IF NOT EXISTS user_accounts (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        user_id BIGINT,
+        status ENUM('active', 'inactive', 'suspended') DEFAULT 'active',
+        role ENUM('user', 'admin', 'moderator', 'editor') DEFAULT 'user',
+        subscription ENUM('free', 'basic', 'premium', 'enterprise') DEFAULT 'free',
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+      )
+    `);
+
+    // Create user_addresses table
+    await pool.execute(`
+      CREATE TABLE IF NOT EXISTS user_addresses (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        user_id BIGINT,
+        street VARCHAR(255),
+        city VARCHAR(100),
+        province VARCHAR(100),
+        postal_code VARCHAR(20),
+        country VARCHAR(100) DEFAULT 'Indonesia',
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+      )
+    `);
+
+    // Create user_preferences table
+    await pool.execute(`
+      CREATE TABLE IF NOT EXISTS user_preferences (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        user_id BIGINT,
+        language VARCHAR(10) DEFAULT 'en',
+        timezone VARCHAR(50) DEFAULT 'Asia/Jakarta',
+        notify_email BOOLEAN DEFAULT TRUE,
+        notify_sms BOOLEAN DEFAULT FALSE,
+        notify_push BOOLEAN DEFAULT TRUE,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+      )
+    `);
+
+    // Create user_profiles table
+    await pool.execute(`
+      CREATE TABLE IF NOT EXISTS user_profiles (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        user_id BIGINT,
+        avatar VARCHAR(255),
+        bio TEXT,
+        website VARCHAR(255),
+        instagram VARCHAR(100),
+        linkedin VARCHAR(100),
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+      )
+    `);
+
+    res.json({
+      success: true,
+      message: 'All tables created successfully',
+      tables: ['users', 'user_accounts', 'user_addresses', 'user_preferences', 'user_profiles']
+    });
+
+  } catch (error) {
+    console.error('Create tables error:', error);
+    res.status(500).json({
+      error: 'Failed to create tables',
+      message: error.message,
+      suggestion: 'Check database permissions'
+    });
+  }
+}));
+
+// Import sample data endpoint
+router.post('/debug/import-sample-data', asyncHandler(async (req, res) => {
+  try {
+    console.log('🔄 Starting sample data import...');
+    
+    const connection = await pool.getConnection();
+    await connection.beginTransaction();
+    
+    try {
+      // Sample users data from your SQL dump
+      const sampleUsers = [
+        {
+          id: 1,
+          username: 'johndoe',
+          email: 'john.doe@email.com',
+          first_name: 'John',
+          last_name: 'Doe',
+          phone: '+6281234567890',
+          date_of_birth: '1990-05-15',
+          gender: 'male',
+          created_at: '2024-01-15 10:30:00',
+          updated_at: '2025-06-10 14:20:00'
+        },
+        {
+          id: 2,
+          username: 'janesmith',
+          email: 'jane.smith@email.com',
+          first_name: 'Jane',
+          last_name: 'Smith',
+          phone: '+6281234567891',
+          date_of_birth: '1988-08-22',
+          gender: 'female',
+          created_at: '2024-02-20 11:45:00',
+          updated_at: '2025-06-12 16:30:00'
+        },
+        {
+          id: 3,
+          username: 'bobwilson',
+          email: 'bob.wilson@email.com',
+          first_name: 'Bob',
+          last_name: 'Wilson',
+          phone: '+6281234567892',
+          date_of_birth: '1992-12-03',
+          gender: 'male',
+          created_at: '2024-03-10 09:20:00',
+          updated_at: '2025-06-11 13:15:00'
+        },
+        {
+          id: 4,
+          username: 'alicejohnson',
+          email: 'alice.johnson@email.com',
+          first_name: 'Alice',
+          last_name: 'Johnson',
+          phone: '+6281234567893',
+          date_of_birth: '1995-07-18',
+          gender: 'female',
+          created_at: '2024-04-05 14:10:00',
+          updated_at: '2025-06-13 10:45:00'
+        },
+        {
+          id: 5,
+          username: 'mikebrown',
+          email: 'mike.brown@email.com',
+          first_name: 'Mike',
+          last_name: 'Brown',
+          phone: '+6281234567894',
+          date_of_birth: '1987-11-25',
+          gender: 'male',
+          created_at: '2024-05-12 16:25:00',
+          updated_at: '2025-06-09 12:20:00'
+        }
+      ];
+
+      // Insert users
+      console.log('📝 Inserting users...');
+      for (const user of sampleUsers) {
+        await connection.execute(`
+          INSERT INTO users (id, username, email, first_name, last_name, phone, date_of_birth, gender, created_at, updated_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          ON DUPLICATE KEY UPDATE
+          first_name = VALUES(first_name),
+          last_name = VALUES(last_name),
+          updated_at = VALUES(updated_at)
+        `, [
+          user.id, user.username, user.email, user.first_name, user.last_name,
+          user.phone, user.date_of_birth, user.gender, user.created_at, user.updated_at
+        ]);
+      }
+
+      // Insert user accounts
+      console.log('👤 Inserting user accounts...');
+      const userAccounts = [
+        { user_id: 1, status: 'active', role: 'admin', subscription: 'premium' },
+        { user_id: 2, status: 'active', role: 'user', subscription: 'basic' },
+        { user_id: 3, status: 'inactive', role: 'user', subscription: 'free' },
+        { user_id: 4, status: 'active', role: 'moderator', subscription: 'premium' },
+        { user_id: 5, status: 'suspended', role: 'user', subscription: 'basic' }
+      ];
+
+      for (const account of userAccounts) {
+        await connection.execute(`
+          INSERT INTO user_accounts (user_id, status, role, subscription)
+          VALUES (?, ?, ?, ?)
+          ON DUPLICATE KEY UPDATE
+          status = VALUES(status),
+          role = VALUES(role),
+          subscription = VALUES(subscription)
+        `, [account.user_id, account.status, account.role, account.subscription]);
+      }
+
+      // Insert user addresses
+      console.log('🏠 Inserting user addresses...');
+      const userAddresses = [
+        { user_id: 1, street: 'Jl. Sudirman No. 123', city: 'Jakarta', province: 'DKI Jakarta', postal_code: '10220', country: 'Indonesia' },
+        { user_id: 2, street: 'Jl. Gatot Subroto No. 456', city: 'Jakarta', province: 'DKI Jakarta', postal_code: '12950', country: 'Indonesia' },
+        { user_id: 3, street: 'Jl. Malioboro No. 789', city: 'Yogyakarta', province: 'Yogyakarta', postal_code: '55271', country: 'Indonesia' },
+        { user_id: 4, street: 'Jl. Braga No. 321', city: 'Bandung', province: 'Jawa Barat', postal_code: '40111', country: 'Indonesia' },
+        { user_id: 5, street: 'Jl. Thamrin No. 654', city: 'Jakarta', province: 'DKI Jakarta', postal_code: '10350', country: 'Indonesia' }
+      ];
+
+      for (const address of userAddresses) {
+        await connection.execute(`
+          INSERT INTO user_addresses (user_id, street, city, province, postal_code, country)
+          VALUES (?, ?, ?, ?, ?, ?)
+          ON DUPLICATE KEY UPDATE
+          street = VALUES(street),
+          city = VALUES(city),
+          province = VALUES(province)
+        `, [address.user_id, address.street, address.city, address.province, address.postal_code, address.country]);
+      }
+
+      // Insert user preferences
+      console.log('⚙️ Inserting user preferences...');
+      const userPreferences = [
+        { user_id: 1, language: 'id', timezone: 'Asia/Jakarta', notify_email: 1, notify_sms: 1, notify_push: 1 },
+        { user_id: 2, language: 'en', timezone: 'Asia/Jakarta', notify_email: 1, notify_sms: 0, notify_push: 1 },
+        { user_id: 3, language: 'id', timezone: 'Asia/Jakarta', notify_email: 0, notify_sms: 0, notify_push: 0 },
+        { user_id: 4, language: 'en', timezone: 'Asia/Jakarta', notify_email: 1, notify_sms: 1, notify_push: 0 },
+        { user_id: 5, language: 'id', timezone: 'Asia/Jakarta', notify_email: 0, notify_sms: 1, notify_push: 1 }
+      ];
+
+      for (const pref of userPreferences) {
+        await connection.execute(`
+          INSERT INTO user_preferences (user_id, language, timezone, notify_email, notify_sms, notify_push)
+          VALUES (?, ?, ?, ?, ?, ?)
+          ON DUPLICATE KEY UPDATE
+          language = VALUES(language),
+          timezone = VALUES(timezone)
+        `, [pref.user_id, pref.language, pref.timezone, pref.notify_email, pref.notify_sms, pref.notify_push]);
+      }
+
+      // Insert user profiles
+      console.log('👤 Inserting user profiles...');
+      const userProfiles = [
+        { 
+          user_id: 1, 
+          avatar: 'https://example.com/avatars/john_doe.jpg',
+          bio: 'Passionate software developer and tech enthusiast. Love coding and solving complex problems.',
+          website: 'https://johndoe.dev',
+          instagram: 'johndoe_dev',
+          linkedin: 'https://linkedin.com/in/johndoe'
+        },
+        { 
+          user_id: 2, 
+          avatar: 'https://example.com/avatars/jane_smith.jpg',
+          bio: 'Digital marketing specialist with 5+ years experience. Coffee lover and travel enthusiast.',
+          website: 'https://janesmith.com',
+          instagram: 'jane_marketing',
+          linkedin: 'https://linkedin.com/in/janesmith'
+        },
+        { 
+          user_id: 3, 
+          avatar: 'https://example.com/avatars/bob_wilson.jpg',
+          bio: 'Graphic designer creating beautiful visual experiences. Always learning new design trends.',
+          website: 'https://bobwilson.design',
+          instagram: 'bob_designs',
+          linkedin: 'https://linkedin.com/in/bobwilson'
+        },
+        { 
+          user_id: 4, 
+          avatar: 'https://example.com/avatars/alice_johnson.jpg',
+          bio: 'Project manager coordinating teams to deliver exceptional results. Agile methodology advocate.',
+          website: 'https://alicejohnson.pm',
+          instagram: 'alice_pm',
+          linkedin: 'https://linkedin.com/in/alicejohnson'
+        },
+        { 
+          user_id: 5, 
+          avatar: 'https://example.com/avatars/mike_brown.jpg',
+          bio: 'Data scientist exploring insights from complex datasets. Python and R enthusiast.',
+          website: 'https://mikebrown.data',
+          instagram: 'mike_data',
+          linkedin: 'https://linkedin.com/in/mikebrown'
+        }
+      ];
+
+      for (const profile of userProfiles) {
+        await connection.execute(`
+          INSERT INTO user_profiles (user_id, avatar, bio, website, instagram, linkedin)
+          VALUES (?, ?, ?, ?, ?, ?)
+          ON DUPLICATE KEY UPDATE
+          bio = VALUES(bio),
+          website = VALUES(website)
+        `, [profile.user_id, profile.avatar, profile.bio, profile.website, profile.instagram, profile.linkedin]);
+      }
+
+      await connection.commit();
+      console.log('✅ Sample data imported successfully');
+
+      // Get final count
+      const [userCount] = await connection.execute('SELECT COUNT(*) as count FROM users');
+      
+      res.json({
+        success: true,
+        message: 'Sample data imported successfully',
+        imported: {
+          users: sampleUsers.length,
+          accounts: userAccounts.length,
+          addresses: userAddresses.length,
+          preferences: userPreferences.length,
+          profiles: userProfiles.length
+        },
+        total_users_in_db: userCount[0].count
+      });
+
+    } catch (error) {
+      await connection.rollback();
+      throw error;
+    } finally {
+      connection.release();
+    }
+
+  } catch (error) {
+    console.error('❌ Sample data import failed:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to import sample data',
+      message: error.message
+    });
+  }
+}));
+
 // Import FULL sample data endpoint (sesuai SQL dump)
 router.post('/debug/import-full-data', asyncHandler(async (req, res) => {
   try {
@@ -596,335 +932,6 @@ router.post('/debug/import-full-data', asyncHandler(async (req, res) => {
       success: false,
       error: 'Failed to import full database',
       message: error.message
-    });
-  }
-}));
-  try {
-    console.log('🔄 Starting sample data import...');
-    
-    const connection = await pool.getConnection();
-    await connection.beginTransaction();
-    
-    try {
-      // Sample users data from your SQL dump
-      const sampleUsers = [
-        {
-          id: 1,
-          username: 'johndoe',
-          email: 'john.doe@email.com',
-          first_name: 'John',
-          last_name: 'Doe',
-          phone: '+6281234567890',
-          date_of_birth: '1990-05-15',
-          gender: 'male',
-          created_at: '2024-01-15 10:30:00',
-          updated_at: '2025-06-10 14:20:00'
-        },
-        {
-          id: 2,
-          username: 'janesmith',
-          email: 'jane.smith@email.com',
-          first_name: 'Jane',
-          last_name: 'Smith',
-          phone: '+6281234567891',
-          date_of_birth: '1988-08-22',
-          gender: 'female',
-          created_at: '2024-02-20 11:45:00',
-          updated_at: '2025-06-12 16:30:00'
-        },
-        {
-          id: 3,
-          username: 'bobwilson',
-          email: 'bob.wilson@email.com',
-          first_name: 'Bob',
-          last_name: 'Wilson',
-          phone: '+6281234567892',
-          date_of_birth: '1992-12-03',
-          gender: 'male',
-          created_at: '2024-03-10 09:20:00',
-          updated_at: '2025-06-11 13:15:00'
-        },
-        {
-          id: 4,
-          username: 'alicejohnson',
-          email: 'alice.johnson@email.com',
-          first_name: 'Alice',
-          last_name: 'Johnson',
-          phone: '+6281234567893',
-          date_of_birth: '1995-07-18',
-          gender: 'female',
-          created_at: '2024-04-05 14:10:00',
-          updated_at: '2025-06-13 10:45:00'
-        },
-        {
-          id: 5,
-          username: 'mikebrown',
-          email: 'mike.brown@email.com',
-          first_name: 'Mike',
-          last_name: 'Brown',
-          phone: '+6281234567894',
-          date_of_birth: '1987-11-25',
-          gender: 'male',
-          created_at: '2024-05-12 16:25:00',
-          updated_at: '2025-06-09 12:20:00'
-        }
-      ];
-
-      // Insert users
-      console.log('📝 Inserting users...');
-      for (const user of sampleUsers) {
-        await connection.execute(`
-          INSERT INTO users (id, username, email, first_name, last_name, phone, date_of_birth, gender, created_at, updated_at)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-          ON DUPLICATE KEY UPDATE
-          first_name = VALUES(first_name),
-          last_name = VALUES(last_name),
-          updated_at = VALUES(updated_at)
-        `, [
-          user.id, user.username, user.email, user.first_name, user.last_name,
-          user.phone, user.date_of_birth, user.gender, user.created_at, user.updated_at
-        ]);
-      }
-
-      // Insert user accounts
-      console.log('👤 Inserting user accounts...');
-      const userAccounts = [
-        { user_id: 1, status: 'active', role: 'admin', subscription: 'premium' },
-        { user_id: 2, status: 'active', role: 'user', subscription: 'basic' },
-        { user_id: 3, status: 'inactive', role: 'user', subscription: 'free' },
-        { user_id: 4, status: 'active', role: 'moderator', subscription: 'premium' },
-        { user_id: 5, status: 'suspended', role: 'user', subscription: 'basic' }
-      ];
-
-      for (const account of userAccounts) {
-        await connection.execute(`
-          INSERT INTO user_accounts (user_id, status, role, subscription)
-          VALUES (?, ?, ?, ?)
-          ON DUPLICATE KEY UPDATE
-          status = VALUES(status),
-          role = VALUES(role),
-          subscription = VALUES(subscription)
-        `, [account.user_id, account.status, account.role, account.subscription]);
-      }
-
-      // Insert user addresses
-      console.log('🏠 Inserting user addresses...');
-      const userAddresses = [
-        { user_id: 1, street: 'Jl. Sudirman No. 123', city: 'Jakarta', province: 'DKI Jakarta', postal_code: '10220', country: 'Indonesia' },
-        { user_id: 2, street: 'Jl. Gatot Subroto No. 456', city: 'Jakarta', province: 'DKI Jakarta', postal_code: '12950', country: 'Indonesia' },
-        { user_id: 3, street: 'Jl. Malioboro No. 789', city: 'Yogyakarta', province: 'Yogyakarta', postal_code: '55271', country: 'Indonesia' },
-        { user_id: 4, street: 'Jl. Braga No. 321', city: 'Bandung', province: 'Jawa Barat', postal_code: '40111', country: 'Indonesia' },
-        { user_id: 5, street: 'Jl. Thamrin No. 654', city: 'Jakarta', province: 'DKI Jakarta', postal_code: '10350', country: 'Indonesia' }
-      ];
-
-      for (const address of userAddresses) {
-        await connection.execute(`
-          INSERT INTO user_addresses (user_id, street, city, province, postal_code, country)
-          VALUES (?, ?, ?, ?, ?, ?)
-          ON DUPLICATE KEY UPDATE
-          street = VALUES(street),
-          city = VALUES(city),
-          province = VALUES(province)
-        `, [address.user_id, address.street, address.city, address.province, address.postal_code, address.country]);
-      }
-
-      // Insert user preferences
-      console.log('⚙️ Inserting user preferences...');
-      const userPreferences = [
-        { user_id: 1, language: 'id', timezone: 'Asia/Jakarta', notify_email: 1, notify_sms: 1, notify_push: 1 },
-        { user_id: 2, language: 'en', timezone: 'Asia/Jakarta', notify_email: 1, notify_sms: 0, notify_push: 1 },
-        { user_id: 3, language: 'id', timezone: 'Asia/Jakarta', notify_email: 0, notify_sms: 0, notify_push: 0 },
-        { user_id: 4, language: 'en', timezone: 'Asia/Jakarta', notify_email: 1, notify_sms: 1, notify_push: 0 },
-        { user_id: 5, language: 'id', timezone: 'Asia/Jakarta', notify_email: 0, notify_sms: 1, notify_push: 1 }
-      ];
-
-      for (const pref of userPreferences) {
-        await connection.execute(`
-          INSERT INTO user_preferences (user_id, language, timezone, notify_email, notify_sms, notify_push)
-          VALUES (?, ?, ?, ?, ?, ?)
-          ON DUPLICATE KEY UPDATE
-          language = VALUES(language),
-          timezone = VALUES(timezone)
-        `, [pref.user_id, pref.language, pref.timezone, pref.notify_email, pref.notify_sms, pref.notify_push]);
-      }
-
-      // Insert user profiles
-      console.log('👤 Inserting user profiles...');
-      const userProfiles = [
-        { 
-          user_id: 1, 
-          avatar: 'https://example.com/avatars/john_doe.jpg',
-          bio: 'Passionate software developer and tech enthusiast. Love coding and solving complex problems.',
-          website: 'https://johndoe.dev',
-          instagram: 'johndoe_dev',
-          linkedin: 'https://linkedin.com/in/johndoe'
-        },
-        { 
-          user_id: 2, 
-          avatar: 'https://example.com/avatars/jane_smith.jpg',
-          bio: 'Digital marketing specialist with 5+ years experience. Coffee lover and travel enthusiast.',
-          website: 'https://janesmith.com',
-          instagram: 'jane_marketing',
-          linkedin: 'https://linkedin.com/in/janesmith'
-        },
-        { 
-          user_id: 3, 
-          avatar: 'https://example.com/avatars/bob_wilson.jpg',
-          bio: 'Graphic designer creating beautiful visual experiences. Always learning new design trends.',
-          website: 'https://bobwilson.design',
-          instagram: 'bob_designs',
-          linkedin: 'https://linkedin.com/in/bobwilson'
-        },
-        { 
-          user_id: 4, 
-          avatar: 'https://example.com/avatars/alice_johnson.jpg',
-          bio: 'Project manager coordinating teams to deliver exceptional results. Agile methodology advocate.',
-          website: 'https://alicejohnson.pm',
-          instagram: 'alice_pm',
-          linkedin: 'https://linkedin.com/in/alicejohnson'
-        },
-        { 
-          user_id: 5, 
-          avatar: 'https://example.com/avatars/mike_brown.jpg',
-          bio: 'Data scientist exploring insights from complex datasets. Python and R enthusiast.',
-          website: 'https://mikebrown.data',
-          instagram: 'mike_data',
-          linkedin: 'https://linkedin.com/in/mikebrown'
-        }
-      ];
-
-      for (const profile of userProfiles) {
-        await connection.execute(`
-          INSERT INTO user_profiles (user_id, avatar, bio, website, instagram, linkedin)
-          VALUES (?, ?, ?, ?, ?, ?)
-          ON DUPLICATE KEY UPDATE
-          bio = VALUES(bio),
-          website = VALUES(website)
-        `, [profile.user_id, profile.avatar, profile.bio, profile.website, profile.instagram, profile.linkedin]);
-      }
-
-      await connection.commit();
-      console.log('✅ Sample data imported successfully');
-
-      // Get final count
-      const [userCount] = await connection.execute('SELECT COUNT(*) as count FROM users');
-      
-      res.json({
-        success: true,
-        message: 'Sample data imported successfully',
-        imported: {
-          users: sampleUsers.length,
-          accounts: userAccounts.length,
-          addresses: userAddresses.length,
-          preferences: userPreferences.length,
-          profiles: userProfiles.length
-        },
-        total_users_in_db: userCount[0].count
-      });
-
-    } catch (error) {
-      await connection.rollback();
-      throw error;
-    } finally {
-      connection.release();
-    }
-
-  } catch (error) {
-    console.error('❌ Sample data import failed:', error);
-    res.status(500).json({
-      success: false,
-      error: 'Failed to import sample data',
-      message: error.message
-    });
-  }
-}));
-  try {
-    // Create users table
-    await pool.execute(`
-      CREATE TABLE IF NOT EXISTS users (
-        id BIGINT PRIMARY KEY,
-        username VARCHAR(50) UNIQUE NOT NULL,
-        email VARCHAR(100) UNIQUE NOT NULL,
-        first_name VARCHAR(50),
-        last_name VARCHAR(50),
-        phone VARCHAR(20),
-        date_of_birth DATE,
-        gender ENUM('male', 'female', 'other'),
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
-      )
-    `);
-
-    // Create user_accounts table
-    await pool.execute(`
-      CREATE TABLE IF NOT EXISTS user_accounts (
-        id INT AUTO_INCREMENT PRIMARY KEY,
-        user_id BIGINT,
-        status ENUM('active', 'inactive', 'suspended') DEFAULT 'active',
-        role ENUM('user', 'admin', 'moderator') DEFAULT 'user',
-        subscription ENUM('free', 'premium', 'enterprise') DEFAULT 'free',
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
-      )
-    `);
-
-    // Create user_addresses table
-    await pool.execute(`
-      CREATE TABLE IF NOT EXISTS user_addresses (
-        id INT AUTO_INCREMENT PRIMARY KEY,
-        user_id BIGINT,
-        street VARCHAR(255),
-        city VARCHAR(100),
-        province VARCHAR(100),
-        postal_code VARCHAR(20),
-        country VARCHAR(100) DEFAULT 'Indonesia',
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
-      )
-    `);
-
-    // Create user_preferences table
-    await pool.execute(`
-      CREATE TABLE IF NOT EXISTS user_preferences (
-        id INT AUTO_INCREMENT PRIMARY KEY,
-        user_id BIGINT,
-        language VARCHAR(10) DEFAULT 'en',
-        timezone VARCHAR(50) DEFAULT 'Asia/Jakarta',
-        notify_email BOOLEAN DEFAULT TRUE,
-        notify_sms BOOLEAN DEFAULT FALSE,
-        notify_push BOOLEAN DEFAULT TRUE,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
-      )
-    `);
-
-    // Create user_profiles table
-    await pool.execute(`
-      CREATE TABLE IF NOT EXISTS user_profiles (
-        id INT AUTO_INCREMENT PRIMARY KEY,
-        user_id BIGINT,
-        avatar VARCHAR(255),
-        bio TEXT,
-        website VARCHAR(255),
-        instagram VARCHAR(100),
-        linkedin VARCHAR(100),
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
-      )
-    `);
-
-    res.json({
-      success: true,
-      message: 'All tables created successfully',
-      tables: ['users', 'user_accounts', 'user_addresses', 'user_preferences', 'user_profiles']
-    });
-
-  } catch (error) {
-    console.error('Create tables error:', error);
-    res.status(500).json({
-      error: 'Failed to create tables',
-      message: error.message,
-      suggestion: 'Check database permissions'
     });
   }
 }));
