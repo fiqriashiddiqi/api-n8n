@@ -2,10 +2,24 @@ const mysql = require('mysql2/promise');
 
 let dbConfig;
 
-if (process.env.MYSQL_URL) {
-  // Railway MySQL (recommended) - DATABASE_URL format: mysql://user:password@host:port/database
+// Check multiple possible environment variable names used by Railway
+const databaseUrl = process.env.DATABASE_URL || 
+                   process.env.MYSQL_URL || 
+                   process.env.MYSQL_PRIVATE_URL ||
+                   process.env.MYSQL_PUBLIC_URL;
+
+console.log('🔍 Environment variables check:', {
+  DATABASE_URL: !!process.env.DATABASE_URL,
+  MYSQL_URL: !!process.env.MYSQL_URL,
+  MYSQL_PRIVATE_URL: !!process.env.MYSQL_PRIVATE_URL,
+  MYSQL_PUBLIC_URL: !!process.env.MYSQL_PUBLIC_URL,
+  selected_url: databaseUrl ? 'Found' : 'None'
+});
+
+if (databaseUrl) {
+  // Railway MySQL - DATABASE_URL format: mysql://user:password@host:port/database
   try {
-    const url = new URL(process.env.MYSQL_URL);
+    const url = new URL(databaseUrl);
     
     dbConfig = {
       host: url.hostname,
@@ -17,19 +31,24 @@ if (process.env.MYSQL_URL) {
       waitForConnections: true,
       connectionLimit: 10,
       queueLimit: 0,
-      acquireTimeout: 30000,
+      connectTimeout: 20000,
       ssl: false // Railway internal network
     };
     
     console.log('🚂 Using Railway MySQL database');
   } catch (error) {
     console.error('❌ Invalid DATABASE_URL format:', error.message);
-    throw new Error('DATABASE_URL is required for Railway deployment');
+    console.log('🔄 Falling back to local configuration...');
+    dbConfig = getFallbackConfig();
   }
 } else {
   // Local development fallback
-  console.log('⚠️ DATABASE_URL not found, using local/external config');
-  dbConfig = {
+  console.log('⚠️ No Railway database URL found, using fallback config');
+  dbConfig = getFallbackConfig();
+}
+
+function getFallbackConfig() {
+  return {
     host: process.env.DB_HOST || 'localhost',
     user: process.env.DB_USER || 'root',
     password: process.env.DB_PASSWORD || '',
@@ -38,7 +57,6 @@ if (process.env.MYSQL_URL) {
     waitForConnections: true,
     connectionLimit: 5,
     queueLimit: 0,
-    acquireTimeout: 30000,
     ssl: false
   };
 }
@@ -48,7 +66,7 @@ console.log('🗄️ Database config:', {
   port: dbConfig.port,
   user: dbConfig.user,
   database: dbConfig.database,
-  source: process.env.MYSQL_URL ? 'Railway MySQL' : 'Local/External'
+  source: databaseUrl ? 'Railway MySQL' : 'Fallback Config'
 });
 
 let pool;

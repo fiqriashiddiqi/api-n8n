@@ -73,7 +73,7 @@ app.get('/api/health', async (req, res) => {
       database: dbConnected ? 'Railway MySQL Connected' : 'Connection Failed',
       platform: 'Railway',
       environment: process.env.RAILWAY_ENVIRONMENT || 'development',
-      database_url_configured: !!process.env.MYSQL_URL,
+      database_url_configured: !!process.env.DATABASE_URL,
       memory: process.memoryUsage()
     });
   } catch (error) {
@@ -102,7 +102,7 @@ app.get('/api/test-db', async (req, res) => {
         database_info: dbInfo,
         environment: {
           railway_env: process.env.RAILWAY_ENVIRONMENT,
-          database_url_present: !!process.env.MYSQL_URL,
+          database_url_present: !!process.env.DATABASE_URL,
           node_env: process.env.NODE_ENV
         },
         timestamp: new Date().toISOString()
@@ -124,33 +124,24 @@ app.get('/api/test-db', async (req, res) => {
   }
 });
 
-// Create sample table endpoint (for testing)
-app.post('/api/create-sample-table', async (req, res) => {
-  try {
-    const db = require('./src/config/database');
-    
-    // Create a simple users table for testing
-    await db.execute(`
-      CREATE TABLE IF NOT EXISTS test_users (
-        id INT AUTO_INCREMENT PRIMARY KEY,
-        name VARCHAR(100) NOT NULL,
-        email VARCHAR(100) UNIQUE NOT NULL,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-      )
-    `);
-    
-    res.json({
-      status: 'SUCCESS',
-      message: 'Sample table created successfully',
-      table: 'test_users'
-    });
-  } catch (error) {
-    res.status(500).json({
-      status: 'ERROR',
-      message: 'Failed to create sample table',
-      error: error.message
-    });
-  }
+// Debug environment variables
+app.get('/api/debug/env', (req, res) => {
+  res.json({
+    environment: process.env.NODE_ENV || 'development',
+    railway_environment: process.env.RAILWAY_ENVIRONMENT,
+    database_variables: {
+      DATABASE_URL: !!process.env.DATABASE_URL,
+      MYSQL_URL: !!process.env.MYSQL_URL,
+      MYSQL_PRIVATE_URL: !!process.env.MYSQL_PRIVATE_URL,
+      MYSQL_PUBLIC_URL: !!process.env.MYSQL_PUBLIC_URL,
+      // Show first few characters for debugging (don't expose full URL)
+      database_url_preview: process.env.DATABASE_URL ? 
+        process.env.DATABASE_URL.substring(0, 20) + '...' : 'Not set',
+      mysql_url_preview: process.env.MYSQL_URL ? 
+        process.env.MYSQL_URL.substring(0, 20) + '...' : 'Not set'
+    },
+    timestamp: new Date().toISOString()
+  });
 });
 
 // 404 handler
@@ -198,8 +189,8 @@ app.listen(PORT, '0.0.0.0', async () => {
       }
     } catch (error) {
       console.log(`🗄️ Database: Failed ❌ - ${error.message}`);
-      if (error.message.includes('MYSQL_URL')) {
-        console.log('💡 Add MySQL in Railway dashboard to get MYSQL_URL');
+      if (error.message.includes('DATABASE_URL')) {
+        console.log('💡 Add MySQL in Railway dashboard to get DATABASE_URL');
       }
     }
   }, 3000);
