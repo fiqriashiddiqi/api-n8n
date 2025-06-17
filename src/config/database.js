@@ -190,14 +190,8 @@ async function getDatabaseInfo() {
     
     const connection = await pool.getConnection();
     
-    // Use proper MySQL syntax
-    const [dbInfo] = await connection.execute(`
-      SELECT 
-        DATABASE() as database_name,
-        VERSION() as mysql_version,
-        USER() as current_user,
-        CONNECTION_ID() as connection_id
-    `);
+    // Use single line MySQL query to avoid parsing issues
+    const [dbInfo] = await connection.execute('SELECT DATABASE() as database_name, VERSION() as mysql_version, USER() as current_user, CONNECTION_ID() as connection_id');
     
     const [tables] = await connection.execute('SHOW TABLES');
     
