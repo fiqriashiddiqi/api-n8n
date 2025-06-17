@@ -26,7 +26,18 @@ console.log('🔍 Railway MySQL Environment Check:', {
   MYSQL_DATABASE: !!process.env.MYSQL_DATABASE,
   MYSQL_PORT: !!process.env.MYSQL_PORT,
   MYSQL_PUBLIC_URL: !!process.env.MYSQL_PUBLIC_URL,
-  MYSQL_PRIVATE_URL: !!process.env.MYSQL_PRIVATE_URL
+  MYSQL_PRIVATE_URL: !!process.env.MYSQL_PRIVATE_URL,
+  RAILWAY_PRIVATE_DOMAIN: !!process.env.RAILWAY_PRIVATE_DOMAIN
+});
+
+// Debug actual values (first 50 chars only)
+console.log('🔧 Debug actual values:', {
+  DATABASE_URL_preview: process.env.DATABASE_URL ? 
+    process.env.DATABASE_URL.substring(0, 50) + '...' : 'Not set',
+  MYSQL_URL_preview: process.env.MYSQL_URL ? 
+    process.env.MYSQL_URL.substring(0, 50) + '...' : 'Not set',
+  MYSQL_HOST_preview: process.env.MYSQL_HOST || 'Not set',
+  RAILWAY_PRIVATE_DOMAIN_preview: process.env.RAILWAY_PRIVATE_DOMAIN || 'Not set'
 });
 
 if (databaseUrl) {
@@ -43,11 +54,18 @@ if (databaseUrl) {
       waitForConnections: true,
       connectionLimit: 10,
       queueLimit: 0,
-      connectTimeout: 20000,
+      connectTimeout: 30000, // Increased timeout for Railway proxy
+      acquireTimeout: 30000,
       ssl: false
     };
     
     console.log('🚂 Using Railway MySQL (URL format)');
+    console.log('🔗 Connection details:', {
+      host: url.hostname,
+      port: url.port,
+      database: url.pathname.slice(1),
+      user: url.username
+    });
   } catch (error) {
     console.error('❌ Invalid DATABASE_URL format:', error.message);
     dbConfig = getFallbackConfig();
