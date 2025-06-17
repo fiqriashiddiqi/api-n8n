@@ -54,8 +54,7 @@ if (databaseUrl) {
       waitForConnections: true,
       connectionLimit: 10,
       queueLimit: 0,
-      connectTimeout: 30000, // Increased timeout for Railway proxy
-      acquireTimeout: 30000,
+      connectTimeout: 30000, // Only valid timeout option
       ssl: false
     };
     
@@ -81,7 +80,7 @@ if (databaseUrl) {
     waitForConnections: true,
     connectionLimit: 10,
     queueLimit: 0,
-    connectTimeout: 20000,
+    connectTimeout: 30000,
     ssl: false
   };
   
@@ -102,7 +101,7 @@ function getFallbackConfig() {
     waitForConnections: true,
     connectionLimit: 5,
     queueLimit: 0,
-    connectTimeout: 20000,
+    connectTimeout: 30000,
     ssl: false
   };
 }
@@ -126,14 +125,14 @@ async function createPool() {
     
     pool = mysql.createPool(dbConfig);
     
-    // Test connection immediately
+    // Test connection immediately with simple query
     const connection = await pool.getConnection();
     
-    // Test basic query
+    // Use simple test query (fix SQL syntax)
     await connection.execute('SELECT 1 as test, NOW() as current_time');
     console.log('✅ Database connection test successful');
     
-    // Test database info
+    // Test database info with proper MySQL syntax
     const [dbInfo] = await connection.execute('SELECT DATABASE() as db_name, VERSION() as mysql_version');
     console.log('📊 Database info:', dbInfo[0]);
     
@@ -169,7 +168,8 @@ async function testConnection() {
     }
     
     const connection = await pool.getConnection();
-    const [result] = await connection.execute('SELECT 1 as test, NOW() as current_time');
+    // Use proper MySQL syntax
+    const [result] = await connection.execute('SELECT 1 as test, NOW() as time_now');
     connection.release();
     
     console.log('✅ Database connection test successful:', result[0]);
@@ -190,6 +190,7 @@ async function getDatabaseInfo() {
     
     const connection = await pool.getConnection();
     
+    // Use proper MySQL syntax
     const [dbInfo] = await connection.execute(`
       SELECT 
         DATABASE() as database_name,
