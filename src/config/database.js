@@ -2,33 +2,44 @@ const mysql = require('mysql2/promise');
 
 let dbConfig;
 
-if (process.env.DATABASE_URL) {
-  // Jika menggunakan Railway MySQL plugin
-  const url = new URL(process.env.DATABASE_URL);
-  
-  dbConfig = {
-    host: url.hostname,
-    user: url.username,
-    password: url.password,
-    database: url.pathname.slice(1),
-    port: url.port || 3306,
-    // Pool settings only - remove invalid options
-    waitForConnections: true,
-    connectionLimit: 10,
-    queueLimit: 0
-  };
+if (process.env.MYSQL_URL) {
+  // Railway MySQL (recommended) - DATABASE_URL format: mysql://user:password@host:port/database
+  try {
+    const url = new URL(process.env.MYSQL_URL);
+    
+    dbConfig = {
+      host: url.hostname,
+      user: url.username,
+      password: url.password,
+      database: url.pathname.slice(1), // Remove leading '/'
+      port: parseInt(url.port) || 3306,
+      // Railway MySQL optimized settings
+      waitForConnections: true,
+      connectionLimit: 10,
+      queueLimit: 0,
+      acquireTimeout: 30000,
+      ssl: false // Railway internal network
+    };
+    
+    console.log('🚂 Using Railway MySQL database');
+  } catch (error) {
+    console.error('❌ Invalid DATABASE_URL format:', error.message);
+    throw new Error('DATABASE_URL is required for Railway deployment');
+  }
 } else {
-  // FreeSQLDatabase atau local development
+  // Local development fallback
+  console.log('⚠️ DATABASE_URL not found, using local/external config');
   dbConfig = {
-    host: process.env.DB_HOST || 'sql12.freesqldatabase.com',
-    user: process.env.DB_USER || 'sql12785091',
-    password: process.env.DB_PASSWORD || 'f616rtqLdU',
-    database: process.env.DB_NAME || 'sql12785091',
+    host: process.env.DB_HOST || 'localhost',
+    user: process.env.DB_USER || 'root',
+    password: process.env.DB_PASSWORD || '',
+    database: process.env.DB_NAME || 'user_api',
     port: parseInt(process.env.DB_PORT || '3306'),
-    // Only valid pool options
     waitForConnections: true,
     connectionLimit: 5,
-    queueLimit: 0
+    queueLimit: 0,
+    acquireTimeout: 30000,
+    ssl: false
   };
 }
 
@@ -36,89 +47,56 @@ console.log('🗄️ Database config:', {
   host: dbConfig.host,
   port: dbConfig.port,
   user: dbConfig.user,
-  database: dbConfig.database
+  database: dbConfig.database,
+  source: process.env.MYSQL_URL ? 'Railway MySQL' : 'Local/External'
 });
 
 let pool;
 let isConnected = false;
 
-// Connection methods to try
-const connectionMethods = [
-  // Method 1: Try with IP (bypass DNS)
-  {
-    host: '185.224.138.9',
-    user: 'sql12785091',
-    password: 'f616rtqLdU',
-    database: 'sql12785091',
-    port: 3306,
-    connectTimeout: 20000
-  },
-  // Method 2: Original hostname
-  {
-    host: 'sql12.freesqldatabase.com',
-    user: 'sql12785091',
-    password: 'f616rtqLdU',
-    database: 'sql12785091',
-    port: 3306,
-    connectTimeout: 20000
-  },
-  // Method 3: With SSL
-  {
-    host: 'sql12.freesqldatabase.com',
-    user: 'sql12785091',
-    password: 'f616rtqLdU',
-    database: 'sql12785091',
-    port: 3306,
-    ssl: { rejectUnauthorized: false },
-    connectTimeout: 20000
-  }
-];
-
-async function createPoolWithFallback() {
-  for (let i = 0; i < connectionMethods.length; i++) {
-    const config = connectionMethods[i];
-    console.log(`🔄 Trying connection method ${i + 1}/${connectionMethods.length}...`);
-    console.log(`   Host: ${config.host}`);
+// Create database pool
+async function createPool() {
+  try {
+    console.log('🔄 Creating MySQL connection pool...');
     
-    try {
-      // Create pool with current config
-      const testPool = mysql.createPool({
-        ...config,
-        waitForConnections: true,
-        connectionLimit: 5,
-        queueLimit: 0
-      });
-      
-      // Test connection
-      const connection = await testPool.getConnection();
-      await connection.execute('SELECT 1 as test');
-      connection.release();
-      
-      console.log(`✅ Connection method ${i + 1} successful!`);
-      pool = testPool;
-      isConnected = true;
-      return pool;
-      
-    } catch (error) {
-      console.error(`❌ Connection method ${i + 1} failed:`, error.message);
-      
-      // If this is the last method, don't wait
-      if (i < connectionMethods.length - 1) {
-        await new Promise(resolve => setTimeout(resolve, 1000));
-      }
-    }
+    pool = mysql.createPool(dbConfig);
+    
+    // Test connection immediately
+    const connection = await pool.getConnection();
+    
+    // Test basic query
+    await connection.execute('SELECT 1 as test, NOW() as current_time');
+    console.log('✅ Database connection test successful');
+    
+    // Test database info
+    const [dbInfo] = await connection.execute('SELECT DATABASE() as db_name, VERSION() as mysql_version');
+    console.log('📊 Database info:', dbInfo[0]);
+    
+    connection.release();
+    
+    isConnected = true;
+    console.log('✅ MySQL pool created successfully');
+    
+    return pool;
+  } catch (error) {
+    console.error('❌ Database pool creation failed:', error.message);
+    console.error('Error details:', {
+      code: error.code,
+      errno: error.errno,
+      sqlState: error.sqlState
+    });
+    
+    isConnected = false;
+    throw error;
   }
-  
-  console.error('❌ All connection methods failed');
-  return null;
 }
 
 // Test connection function
 async function testConnection() {
   try {
-    if (!pool || !isConnected) {
-      console.log('🔄 Pool not ready, attempting to create...');
-      await createPoolWithFallback();
+    if (!pool) {
+      console.log('🔄 Pool not initialized, creating...');
+      await createPool();
     }
     
     if (!pool) {
@@ -126,10 +104,10 @@ async function testConnection() {
     }
     
     const connection = await pool.getConnection();
-    await connection.execute('SELECT 1 as test, NOW() as current_time');
+    const [result] = await connection.execute('SELECT 1 as test, NOW() as current_time');
     connection.release();
     
-    console.log('✅ Database connection test successful');
+    console.log('✅ Database connection test successful:', result[0]);
     return true;
   } catch (error) {
     console.error('❌ Database connection test failed:', error.message);
@@ -138,105 +116,71 @@ async function testConnection() {
   }
 }
 
-// Alternative direct connection (bypass pool)
-async function testDirectConnection() {
-  for (let i = 0; i < connectionMethods.length; i++) {
-    try {
-      console.log(`🔄 Testing direct connection method ${i + 1}...`);
-      
-      const connection = await mysql.createConnection(connectionMethods[i]);
-      await connection.execute('SELECT 1 as test');
-      await connection.end();
-      
-      console.log(`✅ Direct connection method ${i + 1} successful!`);
-      return true;
-      
-    } catch (error) {
-      console.error(`❌ Direct connection method ${i + 1} failed:`, error.message);
+// Get database info
+async function getDatabaseInfo() {
+  try {
+    if (!pool) {
+      await createPool();
     }
-  }
-  
-  return false;
-}
-
-// Get database instance
-function getDatabase() {
-  if (!pool) {
-    console.log('⚠️ Database pool not initialized, creating new connection...');
-    // Return a promise that creates a direct connection
+    
+    const connection = await pool.getConnection();
+    
+    const [dbInfo] = await connection.execute(`
+      SELECT 
+        DATABASE() as database_name,
+        VERSION() as mysql_version,
+        USER() as current_user,
+        CONNECTION_ID() as connection_id
+    `);
+    
+    const [tables] = await connection.execute('SHOW TABLES');
+    
+    connection.release();
+    
     return {
-      execute: async (query, params) => {
-        // Try each connection method for direct query
-        for (const config of connectionMethods) {
-          try {
-            const connection = await mysql.createConnection(config);
-            const result = await connection.execute(query, params);
-            await connection.end();
-            return result;
-          } catch (error) {
-            console.error('Direct query failed:', error.message);
-            continue;
-          }
-        }
-        throw new Error('All database connection methods failed');
-      }
+      info: dbInfo[0],
+      tables: tables.map(t => Object.values(t)[0]),
+      tables_count: tables.length
     };
+  } catch (error) {
+    console.error('❌ Failed to get database info:', error.message);
+    return null;
   }
-  return pool;
 }
 
-// Initialize pool (non-blocking)
-createPoolWithFallback().catch(err => {
-  console.error('❌ Failed to initialize database pool:', err.message);
-  isConnected = false;
+// Initialize pool on module load
+createPool().catch(err => {
+  console.error('❌ Failed to initialize database pool on startup:', err.message);
 });
 
-// Export everything properly
+// Graceful shutdown
+process.on('SIGTERM', async () => {
+  console.log('🔄 Closing database connections...');
+  if (pool) {
+    await pool.end();
+    console.log('✅ Database connections closed');
+  }
+});
+
+// Database exports with Railway MySQL compatibility
 const dbExports = {
   execute: async (query, params) => {
-    if (pool && isConnected) {
-      return pool.execute(query, params);
-    } else {
-      // Fallback to direct connection
-      for (const config of connectionMethods) {
-        try {
-          const connection = await mysql.createConnection(config);
-          const result = await connection.execute(query, params);
-          await connection.end();
-          return result;
-        } catch (error) {
-          console.error('Direct query failed:', error.message);
-          continue;
-        }
-      }
-      throw new Error('All database connection methods failed');
+    if (!pool) {
+      await createPool();
     }
+    return pool.execute(query, params);
   },
   getConnection: async () => {
-    if (pool && isConnected) {
-      return pool.getConnection();
-    } else {
-      // Create a single connection that mimics pool.getConnection()
-      for (const config of connectionMethods) {
-        try {
-          const connection = await mysql.createConnection(config);
-          // Add release method to mimic pool connection
-          connection.release = async () => {
-            await connection.end();
-          };
-          return connection;
-        } catch (error) {
-          continue;
-        }
-      }
-      throw new Error('Failed to get database connection');
+    if (!pool) {
+      await createPool();
     }
+    return pool.getConnection();
   }
 };
 
+// Export everything
 module.exports = dbExports;
-module.exports.pool = dbExports; // Export as pool for compatibility
+module.exports.pool = dbExports; // For compatibility with existing code
 module.exports.testConnection = testConnection;
-module.exports.testDirectConnection = testDirectConnection;
+module.exports.getDatabaseInfo = getDatabaseInfo;
 module.exports.isConnected = () => isConnected;
-module.exports.getDatabase = getDatabase;

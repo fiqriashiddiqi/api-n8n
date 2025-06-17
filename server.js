@@ -63,15 +63,17 @@ app.get('/', (req, res) => {
 // Health check
 app.get('/api/health', async (req, res) => {
   try {
-    const { testDirectConnection } = require('./src/config/database');
-    const dbConnected = await testDirectConnection();
+    const { testConnection } = require('./src/config/database');
+    const dbConnected = await testConnection();
     
     res.json({ 
       status: dbConnected ? 'OK' : 'WARNING', 
-      message: dbConnected ? 'API and database are healthy' : 'API running but database issues',
+      message: dbConnected ? 'API and Railway MySQL are healthy' : 'API running but database issues',
       timestamp: new Date().toISOString(),
-      database: dbConnected ? 'Connected' : 'Connection Failed',
+      database: dbConnected ? 'Railway MySQL Connected' : 'Connection Failed',
       platform: 'Railway',
+      environment: process.env.RAILWAY_ENVIRONMENT || 'development',
+      database_url_configured: !!process.env.MYSQL_URL,
       memory: process.memoryUsage()
     });
   } catch (error) {
@@ -86,52 +88,30 @@ app.get('/api/health', async (req, res) => {
 // Database test endpoint
 app.get('/api/test-db', async (req, res) => {
   try {
-    const { testDirectConnection } = require('./src/config/database');
+    const { testConnection, getDatabaseInfo } = require('./src/config/database');
     
-    console.log('🔄 Testing database connection via API endpoint...');
-    const connected = await testDirectConnection();
+    console.log('🔄 Testing Railway MySQL connection...');
+    const connected = await testConnection();
     
     if (connected) {
-      // If direct connection works, try to get more info
-      try {
-        const mysql = require('mysql2/promise');
-        const connection = await mysql.createConnection({
-          host: '185.224.138.9', // Try IP first
-          user: 'sql12785091',
-          password: 'f616rtqLdU',
-          database: 'sql12785091',
-          port: 3306,
-          ssl: false
-        });
-        
-        const [rows] = await connection.execute('SELECT 1 as test, NOW() as current_time, VERSION() as mysql_version');
-        const [tables] = await connection.execute('SHOW TABLES');
-        
-        await connection.end();
-        
-        res.json({
-          status: 'SUCCESS',
-          message: 'Database connection working perfectly',
-          test_result: rows[0],
-          tables_count: tables.length,
-          available_tables: tables.map(t => Object.values(t)[0]),
-          connection_info: {
-            host: 'sql12.freesqldatabase.com (via IP)',
-            database: 'sql12785091',
-            user: 'sql12785091'
-          }
-        });
-      } catch (detailError) {
-        res.json({
-          status: 'PARTIAL_SUCCESS',
-          message: 'Basic connection works but detailed query failed',
-          error: detailError.message
-        });
-      }
+      const dbInfo = await getDatabaseInfo();
+      
+      res.json({
+        status: 'SUCCESS',
+        message: 'Railway MySQL connection working perfectly!',
+        database_info: dbInfo,
+        environment: {
+          railway_env: process.env.RAILWAY_ENVIRONMENT,
+          database_url_present: !!process.env.MYSQL_URL,
+          node_env: process.env.NODE_ENV
+        },
+        timestamp: new Date().toISOString()
+      });
     } else {
       res.status(500).json({
         status: 'ERROR',
-        message: 'All database connection methods failed'
+        message: 'Database connection failed',
+        suggestion: 'Make sure Railway MySQL is added to your project'
       });
     }
   } catch (error) {
@@ -139,7 +119,7 @@ app.get('/api/test-db', async (req, res) => {
       status: 'ERROR',
       message: 'Database test failed',
       error: error.message,
-      error_code: error.code
+      suggestion: 'Check Railway MySQL configuration'
     });
   }
 });
@@ -200,17 +180,29 @@ app.listen(PORT, '0.0.0.0', async () => {
   // Test database connection after server starts
   setTimeout(async () => {
     try {
-      const { testDirectConnection } = require('./src/config/database');
-      const dbConnected = await testDirectConnection();
-      console.log(`🗄️ Database: ${dbConnected ? 'Connected ✅' : 'Failed ❌'}`);
+      const { testConnection, getDatabaseInfo } = require('./src/config/database');
+      const dbConnected = await testConnection();
       
-      if (!dbConnected) {
-        console.log('💡 Try accessing /api/test-db endpoint for detailed diagnosis');
+      if (dbConnected) {
+        console.log('🗄️ Database: Railway MySQL Connected ✅');
+        const dbInfo = await getDatabaseInfo();
+        if (dbInfo) {
+          console.log(`📊 MySQL Version: ${dbInfo.info.mysql_version}`);
+          console.log(`📁 Database: ${dbInfo.info.database_name}`);
+          console.log(`📋 Tables: ${dbInfo.tables_count} found`);
+        }
+      } else {
+        console.log('🗄️ Database: Failed ❌');
+        console.log('💡 Make sure to add MySQL database in Railway dashboard');
+        console.log('💡 Railway dashboard → New → Database → Add MySQL');
       }
     } catch (error) {
       console.log(`🗄️ Database: Failed ❌ - ${error.message}`);
+      if (error.message.includes('MYSQL_URL')) {
+        console.log('💡 Add MySQL in Railway dashboard to get MYSQL_URL');
+      }
     }
-  }, 3000); // Wait 3 seconds for network to settle
+  }, 3000);
 });
 
 module.exports = app;

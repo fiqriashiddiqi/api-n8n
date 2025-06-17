@@ -74,6 +74,14 @@ router.get('/debug/db-test', asyncHandler(async (req, res) => {
     // Test basic connection
     await pool.execute('SELECT 1 as test');
     
+    // Get database info
+    const [dbInfo] = await pool.execute(`
+      SELECT 
+        DATABASE() as database_name,
+        VERSION() as mysql_version,
+        USER() as current_user
+    `);
+    
     // Try to get table info
     const [tables] = await pool.execute('SHOW TABLES');
     
@@ -98,17 +106,19 @@ router.get('/debug/db-test', asyncHandler(async (req, res) => {
     
     res.json({
       database_connected: true,
+      database_info: dbInfo[0],
       available_tables: tables.map(t => Object.values(t)[0]),
       users_table_exists: userTableExists,
       user_stats: userStats,
-      message: "Database connection OK"
+      message: "Railway MySQL connection successful!",
+      timestamp: new Date().toISOString()
     });
   } catch (error) {
     res.status(500).json({
       database_connected: false,
       error: error.message,
       error_code: error.code,
-      suggestion: 'Check database connection settings'
+      suggestion: 'Make sure Railway MySQL is properly configured'
     });
   }
 }));
