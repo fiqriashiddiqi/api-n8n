@@ -459,7 +459,52 @@ router.post('/debug/import-sample-data', asyncHandler(async (req, res) => {
   }
 }));
 
-// Import FULL sample data endpoint (sesuai SQL dump)
+// Add missing columns to existing tables
+router.post('/debug/update-table-structure', asyncHandler(async (req, res) => {
+  try {
+    console.log('🔄 Updating table structure...');
+    
+    // Add last_login column if it doesn't exist
+    try {
+      await pool.execute(`
+        ALTER TABLE users 
+        ADD COLUMN last_login TIMESTAMP NULL
+      `);
+      console.log('✅ Added last_login column to users table');
+    } catch (error) {
+      if (error.code === 'ER_DUP_FIELDNAME') {
+        console.log('ℹ️ last_login column already exists');
+      } else {
+        console.log('⚠️ Error adding last_login column:', error.message);
+      }
+    }
+
+    // Check current table structure
+    const [columns] = await pool.execute('DESCRIBE users');
+    
+    res.json({
+      success: true,
+      message: 'Table structure updated successfully',
+      current_columns: columns.map(col => ({
+        field: col.Field,
+        type: col.Type,
+        null: col.Null,
+        key: col.Key,
+        default: col.Default
+      }))
+    });
+
+  } catch (error) {
+    console.error('❌ Table structure update failed:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to update table structure',
+      message: error.message
+    });
+  }
+}));
+
+
 router.post('/debug/import-full-data', asyncHandler(async (req, res) => {
   try {
     console.log('🔄 Starting FULL database import from SQL dump...');
@@ -684,15 +729,15 @@ router.post('/debug/import-full-data', asyncHandler(async (req, res) => {
       console.log('📝 Inserting all 16 users...');
       for (const user of allUsers) {
         await connection.execute(`
-          INSERT INTO users (id, username, email, first_name, last_name, phone, date_of_birth, gender, created_at, updated_at, last_login)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          INSERT INTO users (id, username, email, first_name, last_name, phone, date_of_birth, gender, created_at, updated_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
           ON DUPLICATE KEY UPDATE
           first_name = VALUES(first_name),
           last_name = VALUES(last_name),
           updated_at = VALUES(updated_at)
         `, [
           user.id, user.username, user.email, user.first_name, user.last_name,
-          user.phone, user.date_of_birth, user.gender, user.created_at, user.updated_at, user.last_login
+          user.phone, user.date_of_birth, user.gender, user.created_at, user.updated_at
         ]);
       }
 
