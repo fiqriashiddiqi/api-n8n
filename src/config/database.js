@@ -4,11 +4,11 @@ require('dotenv').config();
 
 // Fixed configuration - removed invalid options
 const dbConfig = {
-  host: process.env.DB_HOST || 'localhost',
+  host: process.env.DB_HOST || 'tramway.proxy.rlwy.net',
   user: process.env.DB_USER || 'root',
-  password: process.env.DB_PASSWORD || '',
-  database: process.env.DB_NAME || 'db_test',
-  port: process.env.DB_PORT || 3306,
+  password: process.env.DB_PASSWORD || 'DYchNFdlLeBxiWfIJMOBUnyDEWmbCRtd',
+  database: process.env.DB_NAME || 'railway',
+  port: process.env.DB_PORT || 58010,
   charset: 'utf8mb4',
   connectionLimit: 10,
   // Removed acquireTimeout and timeout (invalid for connection)
