@@ -300,35 +300,86 @@ router.delete('/users/bulk', asyncHandler(async (req, res) => {
 // MAIN USER CRUD ENDPOINTS
 // =============================================================================
 
-// GET /api/users - Get all users with pagination
+// GET /api/users - Get all users with pagination (ROBUST VERSION)
 router.get('/users', asyncHandler(async (req, res) => {
-  const page = parseInt(req.query.page) || 1;
-  const limit = parseInt(req.query.limit) || 10;
+  // Parse and validate pagination parameters
+  let page = 1;
+  let limit = 10;
+  
+  // Safely parse page
+  if (req.query.page) {
+    const parsedPage = parseInt(req.query.page, 10);
+    if (!isNaN(parsedPage) && parsedPage > 0) {
+      page = parsedPage;
+    }
+  }
+  
+  // Safely parse limit
+  if (req.query.limit) {
+    const parsedLimit = parseInt(req.query.limit, 10);
+    if (!isNaN(parsedLimit) && parsedLimit > 0 && parsedLimit <= 100) {
+      limit = parsedLimit;
+    }
+  }
+  
   const offset = (page - 1) * limit;
   
+  // Ensure all parameters are integers
+  const safeLimit = parseInt(limit, 10);
+  const safeOffset = parseInt(offset, 10);
+  
+  console.log('Pagination debug:', { 
+    originalPage: req.query.page, 
+    originalLimit: req.query.limit, 
+    finalPage: page, 
+    finalLimit: safeLimit, 
+    finalOffset: safeOffset 
+  });
+  
   try {
+    // Execute query with properly typed parameters
     const [users] = await pool.execute(
       `SELECT u.*, ua.status, ua.role, ua.subscription 
        FROM users u 
        LEFT JOIN user_accounts ua ON u.id = ua.user_id 
        ORDER BY u.created_at DESC
        LIMIT ? OFFSET ?`,
-      [limit, offset]
+      [safeLimit, safeOffset]
     );
     
     const [totalCount] = await pool.execute('SELECT COUNT(*) as count FROM users');
+    const total = totalCount[0].count;
     
     res.json({
       data: users,
       pagination: {
-        page,
-        limit,
-        total: totalCount[0].count,
-        totalPages: Math.ceil(totalCount[0].count / limit)
+        page: page,
+        limit: safeLimit,
+        total: total,
+        totalPages: Math.ceil(total / safeLimit),
+        hasNext: (page * safeLimit) < total,
+        hasPrev: page > 1
+      },
+      meta: {
+        count: users.length,
+        query_params: {
+          page: req.query.page,
+          limit: req.query.limit
+        }
       }
     });
+    
   } catch (error) {
     console.error('Get users error:', error);
+    console.error('Query parameters:', {
+      safeLimit,
+      safeOffset,
+      types: {
+        safeLimit: typeof safeLimit,
+        safeOffset: typeof safeOffset
+      }
+    });
+    
     res.status(500).json({
       error: 'Failed to get users',
       message: error.message
