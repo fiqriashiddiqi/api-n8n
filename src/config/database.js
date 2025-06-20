@@ -9,7 +9,7 @@ const dbConfig = {
     (process.env.DB_HOST || 'mysql.railway.internal'), // Changed from tmysql
   
   user: process.env.MYSQL_USER || process.env.DB_USER || 'root',
-  password: process.env.MYSQL_PASSWORD || process.env.DB_PASSWORD,
+  password: process.env.MYSQL_PASSWORD || process.env.DB_PASSWORD || 'DYchNFdlLeBxiWfIJMOBUnyDEWmbCRtd',
   database: process.env.MYSQL_DATABASE || process.env.DB_NAME || 'railway',
   port: process.env.MYSQL_URL ? 
     new URL(process.env.MYSQL_URL).port : 
